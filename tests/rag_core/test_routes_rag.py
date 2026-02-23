@@ -237,6 +237,9 @@ async def test_retrieve_should_filter_by_metadata_and_time(rag_async_client: Asy
         json={
             "query": "上海A场怎么计费",
             "top_k": 5,
+            "doc_type": "rule_explain",
+            "source_type": "biz_derived",
+            "source_ids": ["SRC-RULE-SH-001"],
             "city_code": "310100",
             "lot_code": "LOT-A",
             "at_time": datetime.fromisoformat("2026-03-01T00:00:00+08:00").isoformat(),
