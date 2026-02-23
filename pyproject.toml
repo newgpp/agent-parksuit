@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools==75.8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-parksuite"
+version = "0.1.0"
+description = "Agent Parksuite services (phase 1)"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi==0.115.8",
+  "uvicorn==0.34.0",
+  "pydantic==2.10.6",
+  "pydantic-settings==2.7.1",
+  "langgraph==0.2.67",
+  "langchain-openai==0.3.3",
+  "tavily-python==0.7.12",
+  "sqlalchemy==2.0.38",
+  "greenlet==3.1.1",
+  "asyncpg==0.30.0",
+  "pgvector==0.3.6",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==8.3.4",
+  "httpx==0.28.1",
+  "alembic==1.14.1",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
