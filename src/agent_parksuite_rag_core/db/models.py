@@ -25,6 +25,9 @@ class KnowledgeSource(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True, comment="主键ID")
     source_id: Mapped[str] = mapped_column(String(128), unique=True, index=True, comment="来源业务ID")
     doc_type: Mapped[str] = mapped_column(String(32), index=True, comment="文档类型")
+    source_type: Mapped[str] = mapped_column(
+        String(32), default="biz_derived", index=True, comment="来源类型（biz_derived/manual）"
+    )
     title: Mapped[str] = mapped_column(String(255), default="", comment="标题")
     city_code: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True, comment="城市编码")
     lot_codes: Mapped[list[str]] = mapped_column(JSONB, default=list, comment="停车场编码列表")
@@ -44,7 +47,16 @@ class KnowledgeSource(Base):
 
 class KnowledgeChunk(Base):
     __tablename__ = "knowledge_chunks"
-    __table_args__ = ({"comment": "知识分块表（向量检索）"},)
+    __table_args__ = (
+        Index(
+            "ix_knowledge_chunks_embedding_ivfflat",
+            "embedding",
+            postgresql_using="ivfflat",
+            postgresql_with={"lists": 100},
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+        {"comment": "知识分块表（向量检索）"},
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True, comment="主键ID")
     source_pk: Mapped[int] = mapped_column(index=True, comment="所属知识来源ID（逻辑绑定）")

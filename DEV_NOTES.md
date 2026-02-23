@@ -235,6 +235,19 @@
 - Input source aligned with `RAG-000` outputs (`source_type=biz_derived`)
 - Acceptance:
   - can insert and query knowledge chunks with metadata filters
+- Implemented:
+  - data model:
+    - `knowledge_sources.source_type` (default `biz_derived`)
+    - `knowledge_chunks` ivfflat vector index (`vector_cosine_ops`)
+  - APIs:
+    - `POST /api/v1/knowledge/sources` (upsert metadata)
+    - `POST /api/v1/knowledge/chunks/batch` (batch ingest with dim check)
+    - `POST /api/v1/retrieve` (filter by `city_code/lot_code/at_time/doc_type/source_type/source_ids`)
+  - files:
+    - `src/agent_parksuite_rag_core/db/models.py`
+    - `alembic/versions/20260223_0002_rag_init_schema.py`
+    - `src/agent_parksuite_rag_core/schemas/rag.py`
+    - `src/agent_parksuite_rag_core/api/routes.py`
 
 ### RAG-002: Ingestion pipeline
 - Add ingestion flow: clean text -> chunk -> embedding -> upsert

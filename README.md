@@ -129,6 +129,11 @@ SELECT COUNT(*) FROM parking_orders WHERE order_no LIKE 'SCN-%';
 - `GET /api/v1/parking-orders/{order_no}` parking order detail
 - `GET /api/v1/arrears-orders` list arrears orders
 
+## RAG Core endpoints
+- `POST /api/v1/knowledge/sources` upsert knowledge source metadata
+- `POST /api/v1/knowledge/chunks/batch` batch ingest chunks for a source
+- `POST /api/v1/retrieve` retrieve chunks by metadata filters (optional vector ranking)
+
 ### Billing rule payload example
 ```json
 {

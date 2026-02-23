@@ -44,6 +44,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False, comment="主键ID"),
         sa.Column("source_id", sa.String(length=128), nullable=False, comment="来源业务ID"),
         sa.Column("doc_type", sa.String(length=32), nullable=False, comment="文档类型"),
+        sa.Column("source_type", sa.String(length=32), nullable=False, server_default="biz_derived", comment="来源类型"),
         sa.Column("title", sa.String(length=255), nullable=False, server_default="", comment="标题"),
         sa.Column("city_code", sa.String(length=32), nullable=True, comment="城市编码"),
         sa.Column("lot_codes", postgresql.JSONB(astext_type=sa.Text()), nullable=False, comment="停车场编码列表"),
@@ -59,6 +60,7 @@ def upgrade() -> None:
     )
     op.create_index(op.f("ix_knowledge_sources_source_id"), "knowledge_sources", ["source_id"], unique=True)
     op.create_index(op.f("ix_knowledge_sources_doc_type"), "knowledge_sources", ["doc_type"], unique=False)
+    op.create_index(op.f("ix_knowledge_sources_source_type"), "knowledge_sources", ["source_type"], unique=False)
     op.create_index(op.f("ix_knowledge_sources_city_code"), "knowledge_sources", ["city_code"], unique=False)
     op.create_index(op.f("ix_knowledge_sources_effective_from"), "knowledge_sources", ["effective_from"], unique=False)
     op.create_index(op.f("ix_knowledge_sources_effective_to"), "knowledge_sources", ["effective_to"], unique=False)
@@ -86,12 +88,17 @@ def upgrade() -> None:
     )
     op.create_index(op.f("ix_knowledge_chunks_source_pk"), "knowledge_chunks", ["source_pk"], unique=False)
     op.create_index(op.f("ix_knowledge_chunks_scenario_id"), "knowledge_chunks", ["scenario_id"], unique=False)
+    op.execute(
+        "CREATE INDEX ix_knowledge_chunks_embedding_ivfflat "
+        "ON knowledge_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)"
+    )
 
 
 def downgrade() -> None:
     if not _is_target_db():
         return
 
+    op.drop_index("ix_knowledge_chunks_embedding_ivfflat", table_name="knowledge_chunks")
     op.drop_index(op.f("ix_knowledge_chunks_scenario_id"), table_name="knowledge_chunks")
     op.drop_index(op.f("ix_knowledge_chunks_source_pk"), table_name="knowledge_chunks")
     op.drop_table("knowledge_chunks")
@@ -101,6 +108,7 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_knowledge_sources_effective_to"), table_name="knowledge_sources")
     op.drop_index(op.f("ix_knowledge_sources_effective_from"), table_name="knowledge_sources")
     op.drop_index(op.f("ix_knowledge_sources_city_code"), table_name="knowledge_sources")
+    op.drop_index(op.f("ix_knowledge_sources_source_type"), table_name="knowledge_sources")
     op.drop_index(op.f("ix_knowledge_sources_doc_type"), table_name="knowledge_sources")
     op.drop_index(op.f("ix_knowledge_sources_source_id"), table_name="knowledge_sources")
     op.drop_table("knowledge_sources")
