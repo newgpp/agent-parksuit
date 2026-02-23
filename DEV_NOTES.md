@@ -248,6 +248,8 @@
     - `alembic/versions/20260223_0002_rag_init_schema.py`
     - `src/agent_parksuite_rag_core/schemas/rag.py`
     - `src/agent_parksuite_rag_core/api/routes.py`
+    - `tests/rag_core/conftest.py`
+    - `tests/rag_core/test_routes_rag.py`
 
 ### RAG-002: Ingestion pipeline
 - Add ingestion flow: clean text -> chunk -> embedding -> upsert

@@ -180,6 +180,13 @@ export BIZ_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:54
 pytest tests/biz_api/test_routes_billing.py tests/biz_api/test_routes_orders.py
 ```
 
+RAG Core route integration tests need a dedicated test database (default: `parksuite_rag_test`):
+```bash
+docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_rag_test;"
+export RAG_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag_test
+pytest tests/rag_core/test_routes_rag.py
+```
+
 To keep test data/tables for debugging:
 ```bash
 export KEEP_TEST_DATA=1
