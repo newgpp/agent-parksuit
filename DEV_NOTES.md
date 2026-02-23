@@ -27,7 +27,7 @@
 
 ## Biz API PR List
 
-### PR-01: Project bootstrap and dependency baseline
+### BIZ-001: Project bootstrap and dependency baseline
 - Add monorepo layout, package config, test config
 - Add shared dependencies (FastAPI/Pydantic/LangChain stack + SQLAlchemy + asyncpg + pgvector)
 - Files:
@@ -35,7 +35,7 @@
   - `README.md`
   - `.env.example`
 
-### PR-02: Biz API app skeleton and DB initialization
+### BIZ-002: Biz API app skeleton and DB initialization
 - Add Biz API startup entry and health endpoint
 - Add async session factory
 - Files:
@@ -44,7 +44,7 @@
   - `src/agent_parksuite_biz_api/db/base.py`
   - `src/agent_parksuite_biz_api/db/session.py`
 
-### PR-03: Billing rule domain model refactor (rule + version)
+### BIZ-003: Billing rule domain model refactor (rule + version)
 - Replace single billing rule design with:
   - `billing_rules` (identity/scope/status)
   - `billing_rule_versions` (effective time ranges + payload)
@@ -55,7 +55,7 @@
   - `src/agent_parksuite_biz_api/schemas/billing.py`
   - `src/agent_parksuite_biz_api/schemas/order.py`
 
-### PR-04: Billing rule APIs and versioned simulation
+### BIZ-004: Billing rule APIs and versioned simulation
 - Implement APIs:
   - `POST /api/v1/billing-rules` (upsert rule + append version)
   - `GET /api/v1/billing-rules`
@@ -66,7 +66,7 @@
 - Files:
   - `src/agent_parksuite_biz_api/api/routes.py`
 
-### PR-05: Parking order and arrears query APIs
+### BIZ-005: Parking order and arrears query APIs
 - Implement APIs:
   - `POST /api/v1/parking-orders`
   - `GET /api/v1/parking-orders/{order_no}`
@@ -77,7 +77,7 @@
   - `src/agent_parksuite_biz_api/schemas/order.py`
   - `src/agent_parksuite_biz_api/db/models.py`
 
-### PR-06: Billing engine enhancement (payload-driven)
+### BIZ-006: Billing engine enhancement (payload-driven)
 - Support `periodic`, `tiered`, `free` segments by `rule_payload`
 - Support cross-day time windows (e.g. `20:00-08:00`)
 - Support non-divisible unit rounding (ceil charging)
@@ -85,7 +85,7 @@
 - Files:
   - `src/agent_parksuite_biz_api/services/billing_engine.py`
 
-### PR-07: Billing engine test scenarios
+### BIZ-007: Billing engine test scenarios
 - Add/refresh unit tests:
   - periodic with free minutes + cap
   - periodic non-divisible unit rounding
@@ -95,7 +95,7 @@
 - Files:
   - `tests/biz_api/test_billing_engine.py`
 
-### PR-08: Alembic migration baseline (Doc + Implementation)
+### BIZ-008: Alembic migration baseline (Doc + Implementation)
 - Goal:
   - Introduce versioned DB schema migration workflow
   - Provide initial migration that matches current SQLAlchemy models
@@ -114,7 +114,7 @@
   - `alembic upgrade head` can build schema from empty DB
   - `alembic downgrade base` can roll back initial schema
 
-### PR-09: Biz API route integration tests and test-data policy
+### BIZ-009: Biz API route integration tests and test-data policy
 - Add route-level integration tests for billing and order APIs
 - Add test fixtures for dedicated DB, dependency override, and per-test isolation
 - Add optional `KEEP_TEST_DATA=1` to preserve test tables/data for debugging
@@ -127,34 +127,34 @@
 
 ## Rag Core PR Plan
 
-### PR-10: RAG data model and storage upgrade
+### RAG-001: RAG data model and storage upgrade
 - Extend `rag-core` schema with metadata for retrieval filtering:
   - `doc_type`, `city_code`, `lot_codes`, `effective_from`, `effective_to`, `source`, `version`
 - Add indexes for metadata filtering + vector search
 - Acceptance:
   - can insert and query knowledge chunks with metadata filters
 
-### PR-11: Ingestion pipeline
+### RAG-002: Ingestion pipeline
 - Add ingestion flow: clean text -> chunk -> embedding -> upsert
 - Support batch import from JSONL/Markdown sources
 - Acceptance:
   - imported knowledge is retrievable and traceable by source/version
 
-### PR-12: Retrieve API (RAG retrieval core)
+### RAG-003: Retrieve API (RAG retrieval core)
 - Implement `POST /api/v1/retrieve`
 - Support filters:
   - `city_code`, `lot_code`, `at_time`, `doc_type`, `top_k`
 - Acceptance:
   - retrieval honors metadata constraints and returns stable top-k results
 
-### PR-13: Answer API (RAG-only)
+### RAG-004: Answer API (RAG-only)
 - Implement `POST /api/v1/answer` for explanation-style questions
 - Output format:
   - conclusion + key points + cited chunks/sources
 - Acceptance:
   - responses include usable citation fields and evidence snippets
 
-### PR-14: Hybrid orchestration (RAG + biz tools)
+### RAG-005: Hybrid orchestration (RAG + biz tools)
 - Integrate biz tool outputs into answer composition for:
   - arrears check
   - fee verification
@@ -164,7 +164,7 @@
 - Acceptance:
   - verification answers contain both computed facts and explainable references
 
-### PR-15: Evaluation baseline and seed dataset
+### RAG-006: Evaluation baseline and seed dataset
 - Build evaluation set (30-50 Q&A) for parking fee consultation
 - Add basic offline eval scripts and baseline metrics:
   - retrieval hit rate
