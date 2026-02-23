@@ -20,6 +20,10 @@
   - API: `src/agent_parksuite_rag_core/api/routes.py`
   - Models: `src/agent_parksuite_rag_core/db/models.py`
   - Session/init: `src/agent_parksuite_rag_core/db/session.py`
+- Next design scope:
+  - Rule explanation for user questions (how fees are calculated)
+  - Evidence-backed responses with source/version/effective time
+  - Hybrid flow with biz tools for arrears check and fee verification
 
 ## Biz API PR List
 
@@ -120,6 +124,54 @@
   - `tests/biz_api/test_routes_billing.py`
   - `tests/biz_api/test_routes_orders.py`
   - `README.md`
+
+## Rag Core PR Plan
+
+### PR-10: RAG data model and storage upgrade
+- Extend `rag-core` schema with metadata for retrieval filtering:
+  - `doc_type`, `city_code`, `lot_codes`, `effective_from`, `effective_to`, `source`, `version`
+- Add indexes for metadata filtering + vector search
+- Acceptance:
+  - can insert and query knowledge chunks with metadata filters
+
+### PR-11: Ingestion pipeline
+- Add ingestion flow: clean text -> chunk -> embedding -> upsert
+- Support batch import from JSONL/Markdown sources
+- Acceptance:
+  - imported knowledge is retrievable and traceable by source/version
+
+### PR-12: Retrieve API (RAG retrieval core)
+- Implement `POST /api/v1/retrieve`
+- Support filters:
+  - `city_code`, `lot_code`, `at_time`, `doc_type`, `top_k`
+- Acceptance:
+  - retrieval honors metadata constraints and returns stable top-k results
+
+### PR-13: Answer API (RAG-only)
+- Implement `POST /api/v1/answer` for explanation-style questions
+- Output format:
+  - conclusion + key points + cited chunks/sources
+- Acceptance:
+  - responses include usable citation fields and evidence snippets
+
+### PR-14: Hybrid orchestration (RAG + biz tools)
+- Integrate biz tool outputs into answer composition for:
+  - arrears check
+  - fee verification
+- Split final response into:
+  - business facts (tool result)
+  - rule/policy evidence (RAG result)
+- Acceptance:
+  - verification answers contain both computed facts and explainable references
+
+### PR-15: Evaluation baseline and seed dataset
+- Build evaluation set (30-50 Q&A) for parking fee consultation
+- Add basic offline eval scripts and baseline metrics:
+  - retrieval hit rate
+  - citation coverage
+  - empty retrieval rate
+- Acceptance:
+  - one command can run baseline evaluation and output metric summary
 
 ## Open items
 - Define and document `rule_payload` schema contract more strictly (JSON Schema / Pydantic typed segments)
