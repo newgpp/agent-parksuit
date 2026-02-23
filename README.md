@@ -65,6 +65,61 @@ pip install -e .[dev]
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz alembic upgrade head
 ```
 
+## Init RAG Core Tables
+使用 Alembic 初始化 `parksuite_rag`（会创建 `knowledge_sources` / `knowledge_chunks`）：
+```bash
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag alembic upgrade head
+```
+
+## Init RAG Test Dataset (RAG-000)
+建议使用独立种子库 `parksuite_biz_seed`（不要复用 `parksuite_biz_test`）：
+```bash
+docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_biz_seed;"
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz_seed alembic upgrade head
+```
+
+执行种子脚本（写入 `parksuite_biz_seed`，同时导出 JSONL）：
+```bash
+python scripts/rag000_seed_biz_scenarios.py \
+  --database-url postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz_seed \
+  --export-jsonl data/rag000/scenarios.jsonl
+```
+
+Optional:
+```bash
+# no JSONL export
+python scripts/rag000_seed_biz_scenarios.py --no-export
+```
+
+RAG-000 场景覆盖清单：
+- 周期计费基础：可整除 / 不可整除
+- 日间封顶：按日重置（跨天后重新计费）
+- 夜间免费：跨午夜时段
+- 日夜双时段组合：日间封顶 + 夜间封顶
+- 阶梯计费：2小时内与2小时外不同单价
+- 首30分钟免费边界：29 / 30 / 31 分钟
+- 多日停车：中间完整天 + 尾天部分时段
+- 规则版本切换：生效时间前后命中不同版本
+- 多停车场差异：同城不同 `lot_code` 命中不同规则
+- 欠费判断：全额已付 / 部分支付 / 未支付
+- 金额核验一致：订单金额 = 模拟金额
+- 金额核验不一致：输出 `需人工复核`
+
+初始化完成后的预期数据量（脚本可重复执行，会先清理 `SCN-*` 再重建）：
+- `billing_rules`: 5 条
+- `billing_rule_versions`: 6 条
+- `parking_orders`: 22 条
+- `data/rag000/scenarios.jsonl`: 20 行
+
+可用以下 SQL 核对：
+```sql
+SELECT COUNT(*) FROM billing_rules WHERE rule_code LIKE 'SCN-%';
+SELECT COUNT(*) FROM billing_rule_versions brv
+JOIN billing_rules br ON br.id = brv.rule_id
+WHERE br.rule_code LIKE 'SCN-%';
+SELECT COUNT(*) FROM parking_orders WHERE order_no LIKE 'SCN-%';
+```
+
 ## Biz API endpoints
 - `POST /api/v1/billing-rules` upsert billing rule
 - `GET /api/v1/billing-rules` list billing rules

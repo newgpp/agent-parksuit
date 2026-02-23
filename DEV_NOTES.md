@@ -127,16 +127,122 @@
 
 ## Rag Core PR Plan
 
+### RAG-000: Biz scenario dataset baseline (pre-RAG)
+- Build a deterministic business scenario dataset from `biz-api` domain:
+  - billing rules (multi-version, multi-lot)
+  - parking orders (paid/unpaid/arrears)
+  - simulation snapshots for verification cases
+- Define scenario IDs and expected facts for each case:
+  - expected arrears status
+  - expected simulated amount
+  - expected rule version hit
+- Add export format for downstream RAG generation:
+  - JSON/JSONL with scenario metadata and expected outputs
+- Acceptance:
+  - one command can initialize scenario dataset in test DB
+  - scenario facts are reproducible and can be used as eval baseline
+- Implementation entry:
+  - `scripts/rag000_seed_biz_scenarios.py`
+
+#### RAG-000 Data Dictionary
+- `scenario_id`: stable unique ID, e.g. `SCN-001`
+- `intent_tags`: one or more tags:
+  - `rule_explain`
+  - `arrears_check`
+  - `fee_verify`
+- `query`: natural language user question
+- `context`:
+  - `city_code`
+  - `lot_code`
+  - `plate_no`
+  - `order_no` (optional)
+  - `entry_time`
+  - `exit_time`
+- `expected_tools`: expected biz-api calls, e.g.
+  - `GET /api/v1/arrears-orders`
+  - `GET /api/v1/parking-orders/{order_no}`
+  - `POST /api/v1/billing-rules/simulate`
+- `ground_truth`:
+  - `matched_rule_code`
+  - `matched_version_no`
+  - `expected_total_amount`
+  - `order_total_amount`
+  - `amount_check_result` (`一致`/`不一致`)
+  - `amount_check_action` (`自动通过`/`需人工复核`)
+  - `expected_paid_amount`
+  - `expected_arrears_amount`
+  - `expected_arrears_status` (`NONE`/`HAS_ARREARS`)
+- `expected_citations`:
+  - `doc_type` (`rule_explain`/`policy_doc`/`faq`/`sop`)
+  - `source_ids` (one or more chunk/source IDs)
+- `notes`: boundary condition or special check description
+
+#### RAG-000 Scenario Set (20 cases)
+- `SCN-001` 周期计费-整除:
+  - 08:00-09:00, 30分钟2元, 预期4元
+- `SCN-002` 周期计费-非整除进位:
+  - 08:00-09:05, 30分钟2元, 预期6元
+- `SCN-003` 日间封顶:
+  - 08:00-20:00+, 日间封顶20元, 预期20元
+- `SCN-004` 跨天日间封顶重置:
+  - 连续多天停车, 每天日间封顶独立重置
+- `SCN-005` 夜间免费:
+  - 20:00-08:00 免费, 仅夜间停车预期0元
+- `SCN-006` 日夜组合:
+  - 日间收费+夜间免费, 校验分段金额
+- `SCN-007` 阶梯计费:
+  - 首2小时每半小时2元, 之后每半小时3元
+- `SCN-008` 首30分钟免费边界:
+  - 29/30/31分钟三个订单对比
+- `SCN-009` 欠费判断:
+  - 同车牌含已支付、部分支付、未支付订单
+- `SCN-010`~`SCN-011`:
+  - 首30分钟免费边界补足（30分钟/31分钟）
+- `SCN-012`:
+  - 日夜双时段组合，日间与夜间各自封顶
+- `SCN-013`~`SCN-014`:
+  - 阶梯计费2小时内/外差异
+- `SCN-015`~`SCN-016`:
+  - 规则版本切换（生效前后）
+- `SCN-017`~`SCN-018`:
+  - 同城不同 `lot_code` 差异
+- `SCN-019`:
+  - 计费核验一致（订单金额=模拟金额）
+- `SCN-020`:
+  - 计费核验异常（订单金额!=模拟金额，结论“需人工复核”）
+
+#### RAG-000 Seed Expected Counts
+- `billing_rules`: 5
+- `billing_rule_versions`: 6
+- `parking_orders`: 22
+- `scenarios.jsonl`: 20
+
+#### RAG-000 Coverage Matrix
+- Time boundaries:
+  - `07:59`, `08:00`, `19:59`, `20:00`, `20:01`
+- Cross-day boundary:
+  - `23:59 -> 00:01`
+- Version boundary:
+  - `effective_from` hit at exact timestamp
+- Cap boundary:
+  - equal to cap
+  - exceed cap by one billing unit
+
 ### RAG-001: RAG data model and storage upgrade
 - Extend `rag-core` schema with metadata for retrieval filtering:
   - `doc_type`, `city_code`, `lot_codes`, `effective_from`, `effective_to`, `source`, `version`
 - Add indexes for metadata filtering + vector search
+- Input source aligned with `RAG-000` outputs (`source_type=biz_derived`)
 - Acceptance:
   - can insert and query knowledge chunks with metadata filters
 
 ### RAG-002: Ingestion pipeline
 - Add ingestion flow: clean text -> chunk -> embedding -> upsert
 - Support batch import from JSONL/Markdown sources
+- Support derived knowledge generation from biz scenarios:
+  - rule explanation text
+  - scenario-based FAQ
+  - fee calculation walk-through snippets
 - Acceptance:
   - imported knowledge is retrievable and traceable by source/version
 
@@ -144,6 +250,7 @@
 - Implement `POST /api/v1/retrieve`
 - Support filters:
   - `city_code`, `lot_code`, `at_time`, `doc_type`, `top_k`
+- Ensure retrieval prefers dataset-aligned chunks for scenario-based queries
 - Acceptance:
   - retrieval honors metadata constraints and returns stable top-k results
 
@@ -172,6 +279,26 @@
   - empty retrieval rate
 - Acceptance:
   - one command can run baseline evaluation and output metric summary
+
+### RAG-007: Explicit planner layer
+- Add a planning step before execution:
+  - identify intent type (explanation / arrears check / fee verification / mixed)
+  - generate ordered action plan (RAG retrieve, biz-tool calls, final synthesis)
+- Enforce structured plan output with plan IDs and step statuses
+- Acceptance:
+  - each answer request has an auditable execution plan
+  - mixed queries trigger both retrieval and tool calls in deterministic order
+
+### RAG-008: Evaluator-optimizer loop
+- Add response evaluator after first draft:
+  - check evidence sufficiency (citations present and relevant)
+  - check tool coverage (required tool calls executed for intent)
+  - check consistency between tool facts and generated text
+- Add optimizer retry policy:
+  - if evaluation fails, auto re-retrieve / re-call missing tools / regenerate once
+- Acceptance:
+  - failed first-pass answers can be corrected automatically
+  - evaluation result is logged with pass/fail reason and retry path
 
 ## Open items
 - Define and document `rule_payload` schema contract more strictly (JSON Schema / Pydantic typed segments)
