@@ -144,6 +144,64 @@ python scripts/rag002_ingest_knowledge.py \
   --replace-existing
 ```
 
+### RAG-002 初始化与验收（推荐顺序）
+1. （可选）重建 `parksuite_rag`（当迁移状态异常/历史脏数据较多时推荐）
+```bash
+docker exec -it parksuite-pg psql -U postgres -d postgres -c "DROP DATABASE IF EXISTS parksuite_rag;"
+docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_rag;"
+```
+
+2. 初始化 `parksuite_rag` 表结构
+```bash
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag alembic upgrade head
+```
+说明：当前迁移脚本会按“当前连接数据库名”判断执行目标，避免误跳过 `parksuite_rag` 初始化。
+
+3. 生成 `RAG-000` 场景数据（写入 `parksuite_biz_seed` + 导出 JSONL）
+```bash
+python scripts/rag000_seed_biz_scenarios.py \
+  --database-url postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz_seed \
+  --export-jsonl data/rag000/scenarios.jsonl
+```
+
+4. 执行 `RAG-002` 入库（默认 deterministic embedding）
+```bash
+python scripts/rag002_ingest_knowledge.py \
+  --database-url postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag \
+  --input-type scenarios_jsonl \
+  --input-path data/rag000/scenarios.jsonl \
+  --replace-existing
+```
+
+5. SQL 验收（`parksuite_rag`）
+```sql
+-- source 总数（预期 40：20 个 scenario * 2 个 doc_type）
+SELECT COUNT(*) FROM knowledge_sources WHERE source_id LIKE 'RAG000-%';
+
+-- chunk 总数（应 > 0）
+SELECT COUNT(*) FROM knowledge_chunks kc
+JOIN knowledge_sources ks ON ks.id = kc.source_pk
+WHERE ks.source_id LIKE 'RAG000-%';
+```
+
+6. 接口验收（启动 `rag-core` 后）
+```bash
+curl -X POST "http://127.0.0.1:8002/api/v1/retrieve" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "上海A场怎么计费",
+    "query_embedding": null,
+    "top_k": 5,
+    "doc_type": "rule_explain",
+    "source_type": "biz_derived",
+    "city_code": "310100",
+    "lot_code": "SCN-LOT-A",
+    "at_time": "2026-02-10T10:00:00+08:00",
+    "include_inactive": false
+  }'
+```
+预期：返回 `items` 非空，且结果包含 `source_id/doc_type/content` 字段。
+
 可选：使用 OpenAI embedding
 ```bash
 export OPENAI_API_KEY=your_key

@@ -24,6 +24,9 @@ TARGET_DB = "parksuite_biz"
 
 
 def _current_db_name() -> str:
+    bind = op.get_bind()
+    if bind is not None:
+        return str(bind.exec_driver_sql("SELECT current_database()").scalar_one())
     url = context.config.get_main_option("sqlalchemy.url")
     return urlparse(url).path.lstrip("/").split("?", 1)[0]
 
