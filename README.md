@@ -1,6 +1,6 @@
 # agent-parksuit
 
-Phase 1 monorepo with two FastAPI modules:
+FastAPI modules:
 - `agent_parksuite_biz_api`: billing rules + parking order APIs
 - `agent_parksuite_rag_core`: RAG core skeleton backed by PostgreSQL + pgvector
 
@@ -85,7 +85,7 @@ BIZ_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite
 RAG_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag alembic upgrade head
 ```
 
-## Init RAG Test Dataset (RAG-000)
+## Init RAG Test Dataset
 建议使用独立种子库 `parksuite_biz_seed`（不要复用 `parksuite_biz_test`）：
 ```bash
 docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_biz_seed;"
@@ -165,17 +165,34 @@ flowchart TD
     G --> H[HybridAnswerResponse]
 ```
 
-### Retrieval 术语对照（中英）
-- `retrieve`：召回（从知识库取回候选内容，不是最终回答）
-- `retrieval`：检索/召回过程
-- `chunk` / `chunks`：知识分块（文档切分后的最小检索单元）
-- `query`：查询文本（用户问题或检索语句）
-- `query_embedding`：查询向量（`query` 的向量化表示）
-- `embedding`：向量表示（文本语义向量）
-- `vector similarity ranking`：向量相似度排序（按向量距离/相似度重排）
-- `metadata filters`：元数据过滤（如 `doc_type/city_code/lot_code/at_time`）
-- `top_k`：召回条数上限（返回前 K 条）
-- `source` / `knowledge source`：知识来源（文档级来源记录）
+### AI 术语对照（中英 + 发音）
+- `Agent`：智能体；发音：`/ˈeɪdʒənt/`
+- `LLM`：大语言模型；发音：`L-L-M`
+- `Large Language Model`：大语言模型；发音：`/lɑːdʒ ˈlæŋɡwɪdʒ ˈmɒdl/`
+- `Retrieve`：召回；发音：`/rɪˈtriːv/`
+- `Retrieval`：检索；发音：`/rɪˈtriːvl/`
+- `Augmented`：增强；发音：`/ɔːɡˈmentɪd/`
+- `Generation`：生成；发音：`/ˌdʒenəˈreɪʃn/`
+- `RAG`：检索增强生成；发音：`R-A-G` 或 `/ræɡ/`
+- `Vector`：向量；发音：`/ˈvektə(r)/`
+- `Embedding`：嵌入/词向量；发音：`/ɪmˈbedɪŋ/`
+- `Database`：数据库；发音：`/ˈdeɪtəbeɪs/`
+- `Tool Call`：工具调用；发音：`/tuːl kɔːl/`
+- `Prompt`：提示词；发音：`/prɒmpt/`
+- `Token`：令牌/词元；发音：`/ˈtəʊkən/`
+- `Inference`：推理；发音：`/ˈɪnfərəns/`
+- `Fine-tune`：微调；发音：`/ˈfaɪn tjuːn/`
+- `Workflow`：工作流；发音：`/ˈwɜːkfləʊ/`
+- `Planning`：规划；发音：`/ˈplænɪŋ/`
+- `Memory`：记忆；发音：`/ˈmeməri/`
+- `Reflection`：反思/自省；发音：`/rɪˈflekʃn/`
+- `Chunk` / `Chunks`：知识分块；发音：`/tʃʌŋk/`
+- `Query`：查询文本；发音：`/ˈkwɪəri/`
+- `Query Embedding`：查询向量；发音：`/ˈkwɪəri ɪmˈbedɪŋ/`
+- `Vector Similarity Ranking`：向量相似度排序；发音：`/ˈvektə(r) ˌsɪməˈlærəti ˈræŋkɪŋ/`
+- `Metadata Filters`：元数据过滤；发音：`/ˈmetədəɪtə ˈfɪltəz/`
+- `Top K`：召回条数上限；发音：`/tɒp keɪ/`
+- `Source` / `Knowledge Source`：知识来源；发音：`/sɔːs/`，`/ˈnɒlɪdʒ sɔːs/`
 
 ## Documentation
 - [RAG Ingestion](docs/rag_ingestion.md)
