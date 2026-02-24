@@ -9,16 +9,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agent_parksuite_rag_core.config import settings
 from agent_parksuite_rag_core.db.session import get_db_session
 from agent_parksuite_rag_core.repositories.knowledge import KnowledgeRepository
-from agent_parksuite_rag_core.schemas.rag import (
+from agent_parksuite_rag_core.schemas.answer import (
     AnswerCitation,
     AnswerRequest,
     AnswerResponse,
     HybridAnswerRequest,
     HybridAnswerResponse,
+)
+from agent_parksuite_rag_core.schemas.knowledge import (
     ChunkIngestRequest,
     ChunkIngestResponse,
     KnowledgeSourceResponse,
     KnowledgeSourceUpsertRequest,
+)
+from agent_parksuite_rag_core.schemas.retrieve import (
     RetrieveRequest,
     RetrieveResponse,
     RetrieveResponseItem,

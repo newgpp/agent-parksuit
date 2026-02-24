@@ -8,7 +8,8 @@ from loguru import logger
 
 from agent_parksuite_rag_core.clients.biz_api_client import BizApiClient
 from agent_parksuite_rag_core.config import settings
-from agent_parksuite_rag_core.schemas.rag import HybridAnswerRequest, RetrieveResponseItem
+from agent_parksuite_rag_core.schemas.answer import HybridAnswerRequest
+from agent_parksuite_rag_core.schemas.retrieve import RetrieveResponseItem
 from agent_parksuite_rag_core.services.answering import _extract_json_payload, generate_hybrid_answer
 from agent_parksuite_rag_core.tools.biz_fact_tools import BizFactTools
 from agent_parksuite_rag_core.workflows.hybrid_answer import HybridGraphState, run_hybrid_workflow

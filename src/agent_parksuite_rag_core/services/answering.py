@@ -8,7 +8,7 @@ from langchain_openai import ChatOpenAI
 from loguru import logger
 
 from agent_parksuite_rag_core.config import settings
-from agent_parksuite_rag_core.schemas.rag import RetrieveResponseItem
+from agent_parksuite_rag_core.schemas.retrieve import RetrieveResponseItem
 
 
 def _log_payload_text(text: str) -> str:

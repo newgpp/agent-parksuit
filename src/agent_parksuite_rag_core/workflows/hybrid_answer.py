@@ -5,7 +5,8 @@ from typing import Any, Awaitable, Callable, TypedDict
 from langgraph.graph import END, StateGraph
 from loguru import logger
 
-from agent_parksuite_rag_core.schemas.rag import HybridAnswerRequest, RetrieveResponseItem
+from agent_parksuite_rag_core.schemas.answer import HybridAnswerRequest
+from agent_parksuite_rag_core.schemas.retrieve import RetrieveResponseItem
 
 RetrieveFn = Callable[[HybridAnswerRequest], Awaitable[list[RetrieveResponseItem]]]
 ClassifyFn = Callable[[HybridAnswerRequest], Awaitable[str]]

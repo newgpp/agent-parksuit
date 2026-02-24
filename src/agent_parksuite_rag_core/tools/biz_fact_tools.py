@@ -7,7 +7,7 @@ from typing import Any
 from loguru import logger
 
 from agent_parksuite_rag_core.clients.biz_api_client import BizApiClient
-from agent_parksuite_rag_core.schemas.rag import HybridAnswerRequest
+from agent_parksuite_rag_core.schemas.answer import HybridAnswerRequest
 
 
 def _normalize_decimal_str(value: Any) -> str:
@@ -79,4 +79,3 @@ class BizFactTools:
             "order": order,
             "simulation": sim,
         }
-

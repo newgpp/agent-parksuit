@@ -7,12 +7,8 @@ from sqlalchemy import and_, delete, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent_parksuite_rag_core.db.models import KnowledgeChunk, KnowledgeSource
-from agent_parksuite_rag_core.schemas.rag import (
-    ChunkIngestRequest,
-    KnowledgeSourceUpsertRequest,
-    RetrieveRequest,
-    RetrieveResponseItem,
-)
+from agent_parksuite_rag_core.schemas.knowledge import ChunkIngestRequest, KnowledgeSourceUpsertRequest
+from agent_parksuite_rag_core.schemas.retrieve import RetrieveRequest, RetrieveResponseItem
 
 
 def _utcnow() -> datetime:

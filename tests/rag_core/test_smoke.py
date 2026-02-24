@@ -1,4 +1,4 @@
-from agent_parksuite_rag_core.schemas.rag import RetrieveRequest
+from agent_parksuite_rag_core.schemas.retrieve import RetrieveRequest
 
 
 def test_retrieve_request_default_top_k() -> None:
