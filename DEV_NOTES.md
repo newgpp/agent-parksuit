@@ -300,6 +300,19 @@
   - conclusion + key points + cited chunks/sources
 - Acceptance:
   - responses include usable citation fields and evidence snippets
+- Implemented:
+  - route:
+    - `src/agent_parksuite_rag_core/api/routes.py`
+    - `POST /api/v1/answer` reuses retrieve filters and returns answer+citation payload
+  - service:
+    - `src/agent_parksuite_rag_core/services/answering.py`
+    - integrates DeepSeek via OpenAI-compatible endpoint (`ChatOpenAI`)
+    - output contract: conclusion + key_points (JSON-first, fallback to raw text)
+  - schema/config:
+    - `src/agent_parksuite_rag_core/schemas/rag.py` (`AnswerRequest/AnswerResponse/AnswerCitation`)
+    - `src/agent_parksuite_rag_core/config.py` (`deepseek_api_key/base_url/model`)
+  - tests:
+    - `tests/rag_core/test_routes_answer.py` (mocked LLM success/503 path)
 
 ### RAG-005: Hybrid orchestration (RAG + biz tools)
 - Integrate biz tool outputs into answer composition for:

@@ -40,6 +40,9 @@ Use `.env` (optional):
 BIZ_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz
 RAG_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag
 RAG_EMBEDDING_DIM=1536
+RAG_DEEPSEEK_API_KEY=
+RAG_DEEPSEEK_BASE_URL=https://api.deepseek.com
+RAG_DEEPSEEK_MODEL=deepseek-chat
 ```
 
 ## Run APIs
@@ -136,6 +139,7 @@ SELECT COUNT(*) FROM parking_orders WHERE order_no LIKE 'SCN-%';
 - `POST /api/v1/knowledge/sources` upsert knowledge source metadata
 - `POST /api/v1/knowledge/chunks/batch` batch ingest chunks for a source
 - `POST /api/v1/retrieve` retrieve chunks by metadata filters (optional vector ranking)
+- `POST /api/v1/answer` generate answer with conclusion/key points/citations (DeepSeek)
 
 ### Retrieval 术语对照（中英）
 - `retrieve`：召回（从知识库取回候选内容，不是最终回答）
@@ -275,6 +279,7 @@ python scripts/rag002_ingest_knowledge.py \
 pytest
 ```
 
+### Integration Tests
 Biz API route integration tests need a dedicated test database (default: `parksuite_biz_test`):
 ```bash
 docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_biz_test;"
@@ -295,6 +300,15 @@ export RAG_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:54
 pytest tests/rag_core/test_routes_retrieve.py
 ```
 
+RAG answer API (`POST /api/v1/answer`) route tests (LLM mocked):
+```bash
+export RAG_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag_test
+pytest tests/rag_core/test_routes_answer.py
+```
+说明：
+- 该用例验证 `POST /api/v1/answer` 的路由编排与返回结构（`conclusion/key_points/citations`）。
+- 测试中已对 LLM 调用做 mock，不依赖真实 DeepSeek/OpenAI 网络请求。
+
 Semantic-retrieval validation (paraphrase query -> vector recall, requires OpenAI embedding):
 ```bash
 export OPENAI_API_KEY=your_key
@@ -307,3 +321,7 @@ To keep test data/tables for debugging:
 export KEEP_TEST_DATA=1
 pytest tests/biz_api/test_routes_billing.py tests/biz_api/test_routes_orders.py
 ```
+
+### Manual E2E Tests (Real LLM)
+完整步骤与示例请求已拆分到：
+- [Manual E2E Answer Tests](docs/manual_e2e_answer_tests.md)
