@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -24,6 +25,25 @@ router = APIRouter(prefix="/api/v1", tags=["rag-core"])
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+def _tokenize_for_match(query: str) -> list[str]:
+    # Keep alnum words and contiguous CJK spans for lightweight lexical ranking.
+    tokens = re.findall(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]+", query.lower())
+    return [token for token in tokens if len(token) >= 2]
+
+
+def _lexical_match_score(query: str, title: str, content: str) -> int:
+    tokens = _tokenize_for_match(query)
+    if not tokens:
+        return 0
+
+    haystack = f"{title} {content}".lower()
+    score = 0
+    for token in tokens:
+        if token in haystack:
+            score += len(token)
+    return score
 
 
 @router.post(
@@ -167,24 +187,46 @@ async def retrieve(
         stmt = stmt.where(and_(*filters))
 
     if payload.query_embedding is not None:
-        stmt = stmt.order_by(score_expr.asc())
-    else:
-        stmt = stmt.order_by(KnowledgeChunk.created_at.desc(), KnowledgeChunk.id.desc())
-
-    rows = (await session.execute(stmt.limit(payload.top_k))).all()
-    items = [
-        RetrieveResponseItem(
-            chunk_id=chunk.id,
-            source_pk=chunk.source_pk,
-            source_id=source.source_id,
-            doc_type=source.doc_type,
-            source_type=source.source_type,
-            title=source.title,
-            content=chunk.chunk_text,
-            scenario_id=chunk.scenario_id,
-            metadata=chunk.chunk_metadata,
-            score=float(score) if score is not None else None,
+        stmt = stmt.order_by(
+            score_expr.asc(),
+            KnowledgeSource.source_id.asc(),
+            KnowledgeChunk.chunk_index.asc(),
+            KnowledgeChunk.id.asc(),
         )
-        for chunk, source, score in rows
-    ]
+        rows = (await session.execute(stmt.limit(payload.top_k))).all()
+    else:
+        candidate_limit = max(payload.top_k * 10, 100)
+        stmt = stmt.order_by(
+            KnowledgeSource.source_id.asc(),
+            KnowledgeChunk.chunk_index.asc(),
+            KnowledgeChunk.id.asc(),
+        )
+        rows = (await session.execute(stmt.limit(candidate_limit))).all()
+        if payload.query.strip():
+            rows.sort(
+                key=lambda row: (
+                    -_lexical_match_score(payload.query, row[1].title or "", row[0].chunk_text or ""),
+                    row[1].source_id,
+                    row[0].chunk_index,
+                    row[0].id,
+                )
+            )
+        rows = rows[: payload.top_k]
+
+    items = []
+    for chunk, source, score in rows:
+        items.append(
+            RetrieveResponseItem(
+                chunk_id=chunk.id,
+                source_pk=chunk.source_pk,
+                source_id=source.source_id,
+                doc_type=source.doc_type,
+                source_type=source.source_type,
+                title=source.title,
+                content=chunk.chunk_text,
+                scenario_id=chunk.scenario_id,
+                metadata=chunk.chunk_metadata,
+                score=float(score) if score is not None else None,
+            )
+        )
     return RetrieveResponse(items=items)

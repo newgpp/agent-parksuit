@@ -289,6 +289,19 @@ export RAG_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:54
 pytest tests/rag_core/test_routes_rag.py
 ```
 
+RAG retrieve API (`POST /api/v1/retrieve`) focused integration tests:
+```bash
+export RAG_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag_test
+pytest tests/rag_core/test_routes_retrieve.py
+```
+
+Semantic-retrieval validation (paraphrase query -> vector recall, requires OpenAI embedding):
+```bash
+export OPENAI_API_KEY=your_key
+export RAG_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag_test
+pytest tests/rag_core/test_routes_retrieve_semantic.py
+```
+
 To keep test data/tables for debugging:
 ```bash
 export KEEP_TEST_DATA=1

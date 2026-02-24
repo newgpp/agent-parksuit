@@ -281,6 +281,18 @@
 - Ensure retrieval prefers dataset-aligned chunks for scenario-based queries
 - Acceptance:
   - retrieval honors metadata constraints and returns stable top-k results
+- Implemented:
+  - route:
+    - `src/agent_parksuite_rag_core/api/routes.py`
+    - supports filter constraints: `doc_type/source_type/city_code/lot_code/source_ids/at_time/include_inactive`
+    - supports vector ranking when `query_embedding` provided
+    - supports lexical preference ranking (no embedding) for scenario-style queries
+    - deterministic tie-break ordering for stable top-k
+  - tests:
+    - `tests/rag_core/test_routes_rag.py`
+    - coverage for metadata/time filters
+    - coverage for lexical preference without embedding
+    - coverage for stable ordering under tied vector scores
 
 ### RAG-004: Answer API (RAG-only)
 - Implement `POST /api/v1/answer` for explanation-style questions
