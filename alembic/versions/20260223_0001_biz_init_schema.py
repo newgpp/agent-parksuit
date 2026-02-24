@@ -20,7 +20,7 @@ branch_labels = None
 depends_on = None
 
 
-TARGET_DB = "parksuite_biz"
+TARGET_DB_PREFIX = "parksuite_biz"
 
 
 def _current_db_name() -> str:
@@ -32,7 +32,7 @@ def _current_db_name() -> str:
 
 
 def _is_target_db() -> bool:
-    return _current_db_name() == TARGET_DB
+    return _current_db_name().startswith(TARGET_DB_PREFIX)
 
 
 def upgrade() -> None:
@@ -68,7 +68,6 @@ def upgrade() -> None:
         sa.Column("rule_payload", postgresql.JSONB(astext_type=sa.Text()), nullable=False, comment="计费规则内容JSON数组"),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, comment="创建时间"),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, comment="更新时间"),
-        sa.ForeignKeyConstraint(["rule_id"], ["billing_rules.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("rule_id", "version_no", name="uq_billing_rule_versions_rule_id_version_no"),
         comment="计费规则版本表",

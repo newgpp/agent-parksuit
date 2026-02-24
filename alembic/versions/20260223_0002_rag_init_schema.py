@@ -21,7 +21,7 @@ branch_labels = None
 depends_on = None
 
 
-TARGET_DB = "parksuite_rag"
+TARGET_DB_PREFIX = "parksuite_rag"
 
 
 def _current_db_name() -> str:
@@ -33,7 +33,7 @@ def _current_db_name() -> str:
 
 
 def _is_target_db() -> bool:
-    return _current_db_name() == TARGET_DB
+    return _current_db_name().startswith(TARGET_DB_PREFIX)
 
 
 def upgrade() -> None:

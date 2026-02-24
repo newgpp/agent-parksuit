@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import DateTime, Index, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, foreign, mapped_column, relationship
 
 from agent_parksuite_biz_api.db.base import Base
 
@@ -33,7 +33,10 @@ class BillingRule(Base):
         DateTime(timezone=True), default=_utcnow_utc, onupdate=_utcnow_utc, comment="更新时间"
     )
     versions: Mapped[list["BillingRuleVersion"]] = relationship(
-        back_populates="rule", cascade="all, delete-orphan", order_by="BillingRuleVersion.version_no"
+        back_populates="rule",
+        cascade="all, delete-orphan",
+        order_by="BillingRuleVersion.version_no",
+        primaryjoin="BillingRule.id == foreign(BillingRuleVersion.rule_id)",
     )
 
 
@@ -45,9 +48,7 @@ class BillingRuleVersion(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True, comment="主键ID")
-    rule_id: Mapped[int] = mapped_column(
-        ForeignKey("billing_rules.id", ondelete="CASCADE"), index=True, comment="所属规则ID"
-    )
+    rule_id: Mapped[int] = mapped_column(Integer, index=True, comment="所属规则ID（逻辑关联 billing_rules.id）")
     version_no: Mapped[int] = mapped_column(Integer, comment="版本号")
     effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True, comment="生效开始时间")
     effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, comment="生效结束时间")
@@ -57,7 +58,10 @@ class BillingRuleVersion(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow_utc, onupdate=_utcnow_utc, comment="更新时间"
     )
-    rule: Mapped["BillingRule"] = relationship(back_populates="versions")
+    rule: Mapped["BillingRule"] = relationship(
+        back_populates="versions",
+        primaryjoin="foreign(BillingRuleVersion.rule_id) == BillingRule.id",
+    )
 
 
 class ParkingOrder(Base):

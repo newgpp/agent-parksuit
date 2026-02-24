@@ -24,6 +24,9 @@ docker run -d --name parksuite-pg \
   -p 5432:5432 \
   pgvector/pgvector:pg16
 
+# create biz database
+docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_biz;"
+
 # create rag database
 docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_rag;"
 
@@ -149,6 +152,7 @@ python scripts/rag002_ingest_knowledge.py \
 ```bash
 docker exec -it parksuite-pg psql -U postgres -d postgres -c "DROP DATABASE IF EXISTS parksuite_rag;"
 docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_rag;"
+docker exec -it parksuite-pg psql -U postgres -d parksuite_rag -c "CREATE EXTENSION IF NOT EXISTS vector;"
 ```
 
 2. 初始化 `parksuite_rag` 表结构
@@ -261,6 +265,7 @@ pytest
 
 Biz API route integration tests need a dedicated test database (default: `parksuite_biz_test`):
 ```bash
+docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_biz_test;"
 export BIZ_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz_test
 pytest tests/biz_api/test_routes_billing.py tests/biz_api/test_routes_orders.py
 ```
