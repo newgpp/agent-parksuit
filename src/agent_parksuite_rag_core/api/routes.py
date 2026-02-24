@@ -31,6 +31,21 @@ from agent_parksuite_rag_core.services.hybrid_answering import run_hybrid_answer
 router = APIRouter(prefix="/api/v1", tags=["rag-core"])
 
 
+def _build_retrieve_request(payload: AnswerRequest | HybridAnswerRequest) -> RetrieveRequest:
+    return RetrieveRequest(
+        query=payload.query,
+        query_embedding=payload.query_embedding,
+        top_k=payload.top_k,
+        doc_type=payload.doc_type,
+        source_type=payload.source_type,
+        city_code=payload.city_code,
+        lot_code=payload.lot_code,
+        at_time=payload.at_time,
+        source_ids=payload.source_ids,
+        include_inactive=payload.include_inactive,
+    )
+
+
 @router.post(
     "/knowledge/sources",
     response_model=KnowledgeSourceResponse,
@@ -95,18 +110,7 @@ async def answer(
     session: AsyncSession = Depends(get_db_session),
 ) -> AnswerResponse:
     repo = KnowledgeRepository(session=session, embedding_dim=settings.embedding_dim)
-    retrieve_payload = RetrieveRequest(
-        query=payload.query,
-        query_embedding=payload.query_embedding,
-        top_k=payload.top_k,
-        doc_type=payload.doc_type,
-        source_type=payload.source_type,
-        city_code=payload.city_code,
-        lot_code=payload.lot_code,
-        at_time=payload.at_time,
-        source_ids=payload.source_ids,
-        include_inactive=payload.include_inactive,
-    )
+    retrieve_payload = _build_retrieve_request(payload)
     try:
         items = await repo.retrieve(retrieve_payload)
     except ValueError as exc:
@@ -164,18 +168,7 @@ async def answer_hybrid(
     )
 
     async def _hybrid_retrieve(hybrid_payload: HybridAnswerRequest) -> list[RetrieveResponseItem]:
-        retrieve_payload = RetrieveRequest(
-            query=hybrid_payload.query,
-            query_embedding=hybrid_payload.query_embedding,
-            top_k=hybrid_payload.top_k,
-            doc_type=hybrid_payload.doc_type,
-            source_type=hybrid_payload.source_type,
-            city_code=hybrid_payload.city_code,
-            lot_code=hybrid_payload.lot_code,
-            at_time=hybrid_payload.at_time,
-            source_ids=hybrid_payload.source_ids,
-            include_inactive=hybrid_payload.include_inactive,
-        )
+        retrieve_payload = _build_retrieve_request(hybrid_payload)
         try:
             items = await repo.retrieve(retrieve_payload)
         except ValueError as exc:
