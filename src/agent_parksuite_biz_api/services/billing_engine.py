@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
+from typing import Any
 from zoneinfo import ZoneInfo
 
 
@@ -71,7 +72,7 @@ def _to_business_time(ts: datetime, business_tz: ZoneInfo) -> datetime:
 
 
 def simulate_fee(
-    rule_payload: list[dict],
+    rule_payload: list[Any],
     entry_time: datetime,
     exit_time: datetime,
     business_timezone: str = "Asia/Shanghai",
@@ -87,13 +88,17 @@ def simulate_fee(
     biz_tz = ZoneInfo(business_timezone)
     entry_local = _to_business_time(entry_time, biz_tz)
     exit_local = _to_business_time(exit_time, biz_tz)
+    normalized_payload: list[dict[str, Any]] = [
+        item.model_dump(mode="json", exclude_none=True) if hasattr(item, "model_dump") else item
+        for item in rule_payload
+    ]
 
     segment_minutes: dict[int, int] = {}
     segment_day_minutes: dict[int, OrderedDict[str, int]] = {}
     cursor = entry_local
     while cursor < exit_local:
         matched_index = None
-        for idx, item in enumerate(rule_payload):
+        for idx, item in enumerate(normalized_payload):
             if _item_matches(cursor, item):
                 matched_index = idx
                 break
@@ -110,7 +115,7 @@ def simulate_fee(
     total_amount = Decimal("0.00")
 
     for segment_index, minutes in sorted(segment_minutes.items()):
-        item = rule_payload[segment_index]
+        item = normalized_payload[segment_index]
         segment_type = str(item.get("type", "free"))
         segment_name = str(item.get("name", f"segment_{segment_index + 1}"))
 

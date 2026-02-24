@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
+from pydantic import ValidationError
 from sqlalchemy import Select, and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +17,7 @@ from agent_parksuite_biz_api.schemas.billing import (
     BillingRuleUpsertRequest,
     BillingSimulateRequest,
     BillingSimulateResponse,
+    RuleSegmentListAdapter,
 )
 from agent_parksuite_biz_api.schemas.order import ParkingOrderCreateRequest, ParkingOrderResponse
 from agent_parksuite_biz_api.services.billing_engine import simulate_fee
@@ -110,7 +112,7 @@ async def upsert_billing_rule(
         effective_from=payload.version.effective_from,
         effective_to=payload.version.effective_to,
         priority=payload.version.priority,
-        rule_payload=payload.version.rule_payload,
+        rule_payload=[item.model_dump(mode="json", exclude_none=True) for item in payload.version.rule_payload],
     )
     db.add(new_version)
 
@@ -212,8 +214,18 @@ async def simulate_billing(
         )
         raise HTTPException(status_code=404, detail="No active version for entry_time")
 
+    try:
+        normalized_payload = RuleSegmentListAdapter.validate_python(matched_version.rule_payload)
+    except ValidationError as exc:
+        logger.exception(
+            "simulate_billing.invalid_rule_payload rule_code={} version_no={}",
+            rule.rule_code,
+            matched_version.version_no,
+        )
+        raise HTTPException(status_code=500, detail=f"Invalid stored rule_payload: {exc}") from exc
+
     result = simulate_fee(
-        matched_version.rule_payload,
+        normalized_payload,
         payload.entry_time,
         payload.exit_time,
         business_timezone=settings.business_timezone,

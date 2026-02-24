@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
 
 
 class RuleScope(BaseModel):
@@ -31,7 +31,7 @@ class BillingRuleVersionCreate(BaseModel):
     effective_from: datetime = Field(description="版本生效开始时间")
     effective_to: datetime | None = Field(default=None, description="版本生效结束时间，空表示长期生效")
     priority: int = Field(default=100, description="版本优先级，值越大优先级越高")
-    rule_payload: list[dict] = Field(default_factory=list, description="计费规则内容（JSON 数组）")
+    rule_payload: list["RuleSegment"] = Field(default_factory=list, description="计费规则内容（JSON 数组）")
 
 
 class BillingRuleUpsertRequest(BaseModel):
@@ -54,7 +54,7 @@ class BillingRuleVersionResponse(BaseModel):
     effective_from: datetime = Field(description="生效开始时间")
     effective_to: datetime | None = Field(description="生效结束时间")
     priority: int = Field(description="版本优先级")
-    rule_payload: list[dict] = Field(description="计费规则内容（JSON 数组）")
+    rule_payload: list["RuleSegment"] = Field(description="计费规则内容（JSON 数组）")
 
 
 class BillingRuleResponse(BaseModel):
@@ -97,3 +97,57 @@ class BillingSimulateResponse(BaseModel):
     total_amount: Decimal = Field(description="总金额")
     matched_version_no: int = Field(description="命中的规则版本号")
     breakdown: list[SegmentCharge] = Field(description="分段计费明细")
+
+
+class TimeWindow(BaseModel):
+    start: str = Field(description="时间窗口开始，格式 HH:MM")
+    end: str = Field(description="时间窗口结束，格式 HH:MM")
+
+
+class TierPriceRule(BaseModel):
+    start_minute: int = Field(ge=0, description="阶梯起始分钟（包含）")
+    end_minute: int | None = Field(default=None, ge=1, description="阶梯结束分钟（不包含），空表示无上限")
+    unit_price: Decimal = Field(ge=0, description="该阶梯每计费单元价格")
+
+
+class BaseRuleSegment(BaseModel):
+    name: str = Field(description="分段名称")
+    type: str = Field(description="分段类型")
+    time_window: TimeWindow | None = Field(default=None, description="命中时间窗口")
+    weekdays: list[int] | None = Field(default=None, description="命中星期，ISO weekday 1-7")
+
+    @field_validator("weekdays")
+    @classmethod
+    def validate_weekdays(cls, value: list[int] | None) -> list[int] | None:
+        if value is None:
+            return value
+        if any(day < 1 or day > 7 for day in value):
+            raise ValueError("weekdays must be ISO weekdays in [1, 7]")
+        return value
+
+
+class FreeRuleSegment(BaseRuleSegment):
+    type: Literal["free"] = "free"
+
+
+class PeriodicRuleSegment(BaseRuleSegment):
+    type: Literal["periodic"] = "periodic"
+    unit_minutes: int = Field(gt=0, description="计费单元分钟")
+    unit_price: Decimal = Field(ge=0, description="每计费单元价格")
+    free_minutes: int = Field(default=0, ge=0, description="免费分钟数")
+    max_charge: Decimal | None = Field(default=None, ge=0, description="封顶金额")
+
+
+class TieredRuleSegment(BaseRuleSegment):
+    type: Literal["tiered"] = "tiered"
+    unit_minutes: int = Field(gt=0, description="计费单元分钟")
+    tiers: list[TierPriceRule] = Field(min_length=1, description="阶梯价格配置")
+    free_minutes: int = Field(default=0, ge=0, description="免费分钟数")
+    max_charge: Decimal | None = Field(default=None, ge=0, description="封顶金额")
+
+
+RuleSegment = Annotated[FreeRuleSegment | PeriodicRuleSegment | TieredRuleSegment, Field(discriminator="type")]
+RuleSegmentListAdapter = TypeAdapter(list[RuleSegment])
+
+BillingRuleVersionCreate.model_rebuild()
+BillingRuleVersionResponse.model_rebuild()
