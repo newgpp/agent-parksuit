@@ -137,6 +137,18 @@ SELECT COUNT(*) FROM parking_orders WHERE order_no LIKE 'SCN-%';
 - `POST /api/v1/knowledge/chunks/batch` batch ingest chunks for a source
 - `POST /api/v1/retrieve` retrieve chunks by metadata filters (optional vector ranking)
 
+### Retrieval 术语对照（中英）
+- `retrieve`：召回（从知识库取回候选内容，不是最终回答）
+- `retrieval`：检索/召回过程
+- `chunk` / `chunks`：知识分块（文档切分后的最小检索单元）
+- `query`：查询文本（用户问题或检索语句）
+- `query_embedding`：查询向量（`query` 的向量化表示）
+- `embedding`：向量表示（文本语义向量）
+- `vector similarity ranking`：向量相似度排序（按向量距离/相似度重排）
+- `metadata filters`：元数据过滤（如 `doc_type/city_code/lot_code/at_time`）
+- `top_k`：召回条数上限（返回前 K 条）
+- `source` / `knowledge source`：知识来源（文档级来源记录）
+
 ## RAG-002 Ingestion Pipeline
 从 `RAG-000` 场景集生成知识分块并写入 `parksuite_rag`：
 ```bash
