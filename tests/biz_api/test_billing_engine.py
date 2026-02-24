@@ -164,7 +164,7 @@ def test_tiered_billing_across_days_with_night_free() -> None:
     assert result["breakdown"][1]["amount"] == Decimal("0.00")
 
 
-def test_periodic_with_timezone_aware_input_should_use_business_timezone_window() -> None:
+def test_periodic_with_timezone_aware_input_should_use_default_window_timezone() -> None:
     payload = [
         {
             "name": "day_periodic",

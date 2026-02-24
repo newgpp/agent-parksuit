@@ -9,7 +9,6 @@ from pydantic import ValidationError
 from sqlalchemy import Select, and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agent_parksuite_biz_api.config import settings
 from agent_parksuite_biz_api.db.models import BillingRule, BillingRuleVersion, ParkingOrder
 from agent_parksuite_biz_api.db.session import get_db_session
 from agent_parksuite_biz_api.schemas.billing import (
@@ -228,7 +227,6 @@ async def simulate_billing(
         normalized_payload,
         payload.entry_time,
         payload.exit_time,
-        business_timezone=settings.business_timezone,
     )
     response = BillingSimulateResponse(**result, matched_version_no=matched_version.version_no)
     logger.info(

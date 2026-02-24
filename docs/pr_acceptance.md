@@ -229,7 +229,7 @@ curl -X POST "http://127.0.0.1:8002/api/v1/answer/hybrid" \
       {
         "name": "day_periodic",
         "type": "periodic",
-        "time_window": {"start": "08:00", "end": "22:00"},
+        "time_window": {"start": "08:00", "end": "22:00", "timezone": "Asia/Shanghai"},
         "unit_minutes": 30,
         "unit_price": 2,
         "free_minutes": 30,
@@ -238,9 +238,10 @@ curl -X POST "http://127.0.0.1:8002/api/v1/answer/hybrid" \
       {
         "name": "night_free",
         "type": "free",
-        "time_window": {"start": "22:00", "end": "08:00"}
+        "time_window": {"start": "22:00", "end": "08:00", "timezone": "Asia/Shanghai"}
       }
     ]
   }
 }
 ```
+说明：`time_window.timezone` 可按规则分段单独配置，默认值为 `Asia/Shanghai`。

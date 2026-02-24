@@ -24,6 +24,11 @@ def _to_named_timezone(ts: datetime, tz_name: str) -> datetime:
     return ts.astimezone(_load_timezone(tz_name))
 
 
+def _resolve_window_timezone(item: dict) -> str:
+    window = item.get("time_window") or {}
+    return str(window.get("timezone", "Asia/Shanghai"))
+
+
 def _in_time_window(ts: datetime, start: str, end: str) -> bool:
     sh, sm = _parse_hhmm(start)
     eh, em = _parse_hhmm(end)
@@ -41,7 +46,7 @@ def _in_time_window(ts: datetime, start: str, end: str) -> bool:
 
 def _item_matches(ts: datetime, item: dict) -> bool:
     window = item.get("time_window") or {}
-    window_timezone = str(window.get("timezone", "Asia/Shanghai"))
+    window_timezone = _resolve_window_timezone(item)
     local_ts = _to_named_timezone(ts, window_timezone)
 
     weekdays = item.get("weekdays")
@@ -79,18 +84,10 @@ def _quantize(value: Decimal) -> Decimal:
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-def _to_business_time(ts: datetime, business_tz: ZoneInfo) -> datetime:
-    if ts.tzinfo is None:
-        # Keep backward compatibility for naive timestamps in existing tests/calls.
-        return ts
-    return ts.astimezone(business_tz)
-
-
 def simulate_fee(
     rule_payload: list[Any],
     entry_time: datetime,
     exit_time: datetime,
-    business_timezone: str = "Asia/Shanghai",
 ) -> dict:
     if exit_time <= entry_time:
         return {
@@ -100,9 +97,6 @@ def simulate_fee(
         }
 
     duration_minutes = int((exit_time - entry_time).total_seconds() // 60)
-    biz_tz = ZoneInfo(business_timezone)
-    entry_local = _to_business_time(entry_time, biz_tz)
-    exit_local = _to_business_time(exit_time, biz_tz)
     normalized_payload: list[dict[str, Any]] = [
         item.model_dump(mode="json", exclude_none=True) if hasattr(item, "model_dump") else item
         for item in rule_payload
@@ -110,8 +104,8 @@ def simulate_fee(
 
     segment_minutes: dict[int, int] = {}
     segment_day_minutes: dict[int, OrderedDict[str, int]] = {}
-    cursor = entry_local
-    while cursor < exit_local:
+    cursor = entry_time
+    while cursor < exit_time:
         matched_index = None
         for idx, item in enumerate(normalized_payload):
             if _item_matches(cursor, item):
@@ -120,7 +114,8 @@ def simulate_fee(
 
         if matched_index is not None:
             segment_minutes[matched_index] = segment_minutes.get(matched_index, 0) + 1
-            day_key = cursor.date().isoformat()
+            matched_item = normalized_payload[matched_index]
+            day_key = _to_named_timezone(cursor, _resolve_window_timezone(matched_item)).date().isoformat()
             day_map = segment_day_minutes.setdefault(matched_index, OrderedDict())
             day_map[day_key] = day_map.get(day_key, 0) + 1
 
