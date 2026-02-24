@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import re
+import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,6 +16,8 @@ from agent_parksuite_rag_core.schemas.rag import (
     AnswerCitation,
     AnswerRequest,
     AnswerResponse,
+    HybridAnswerRequest,
+    HybridAnswerResponse,
     ChunkIngestRequest,
     ChunkIngestResponse,
     KnowledgeSourceResponse,
@@ -23,8 +27,10 @@ from agent_parksuite_rag_core.schemas.rag import (
     RetrieveResponseItem,
 )
 from agent_parksuite_rag_core.services.answering import generate_answer_from_chunks
+from agent_parksuite_rag_core.services.hybrid_answering import run_hybrid_answering
 
 router = APIRouter(prefix="/api/v1", tags=["rag-core"])
+logger = logging.getLogger(__name__)
 
 
 def _utcnow() -> datetime:
@@ -294,3 +300,77 @@ async def answer(
         retrieved_count=len(items),
         model=model_used,
     )
+
+
+@router.post(
+    "/answer/hybrid",
+    response_model=HybridAnswerResponse,
+    summary="混合回答（RAG + Biz工具）",
+    description="规则分流后，执行 RAG 检索与业务工具调用，再综合生成可解释回答。",
+)
+async def answer_hybrid(
+    payload: HybridAnswerRequest,
+    session: AsyncSession = Depends(get_db_session),
+) -> HybridAnswerResponse:
+    request_id = uuid.uuid4().hex[:8]
+    logger.info(
+        "hybrid[%s] request received top_k=%d hint=%s source_ids=%d",
+        request_id,
+        payload.top_k,
+        payload.intent_hint,
+        len(payload.source_ids or []),
+    )
+
+    async def _hybrid_retrieve(hybrid_payload: HybridAnswerRequest) -> list[RetrieveResponseItem]:
+        retrieve_payload = RetrieveRequest(
+            query=hybrid_payload.query,
+            query_embedding=hybrid_payload.query_embedding,
+            top_k=hybrid_payload.top_k,
+            doc_type=hybrid_payload.doc_type,
+            source_type=hybrid_payload.source_type,
+            city_code=hybrid_payload.city_code,
+            lot_code=hybrid_payload.lot_code,
+            at_time=hybrid_payload.at_time,
+            source_ids=hybrid_payload.source_ids,
+            include_inactive=hybrid_payload.include_inactive,
+        )
+        items = await _retrieve_items(retrieve_payload, session)
+        logger.info("hybrid[%s] retrieve done count=%d", request_id, len(items))
+        return items
+
+    try:
+        result = await run_hybrid_answering(payload=payload, retrieve_fn=_hybrid_retrieve, request_id=request_id)
+    except RuntimeError as exc:
+        logger.exception("hybrid[%s] failed with runtime error", request_id)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    items = result.get("retrieved_items", [])
+    citations = [
+        AnswerCitation(
+            chunk_id=item.chunk_id,
+            source_id=item.source_id,
+            doc_type=item.doc_type,
+            title=item.title,
+            snippet=(item.content[:200] + "...") if len(item.content) > 200 else item.content,
+            score=item.score,
+        )
+        for item in items
+    ]
+    response = HybridAnswerResponse(
+        intent=str(result.get("intent", "")),
+        conclusion=str(result.get("conclusion", "")),
+        key_points=list(result.get("key_points", [])),
+        business_facts=dict(result.get("business_facts", {})),
+        citations=citations,
+        retrieved_count=len(items),
+        model=str(result.get("model", settings.deepseek_model)),
+        graph_trace=list(result.get("trace", [])),
+    )
+    logger.info(
+        "hybrid[%s] response ready intent=%s retrieved_count=%d trace=%s",
+        request_id,
+        response.intent,
+        response.retrieved_count,
+        response.graph_trace,
+    )
+    return response

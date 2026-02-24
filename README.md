@@ -43,6 +43,8 @@ RAG_EMBEDDING_DIM=1536
 RAG_DEEPSEEK_API_KEY=
 RAG_DEEPSEEK_BASE_URL=https://api.deepseek.com
 RAG_DEEPSEEK_MODEL=deepseek-chat
+RAG_BIZ_API_BASE_URL=http://127.0.0.1:8001
+RAG_BIZ_API_TIMEOUT_SECONDS=10
 ```
 
 ## Run APIs
@@ -140,6 +142,22 @@ SELECT COUNT(*) FROM parking_orders WHERE order_no LIKE 'SCN-%';
 - `POST /api/v1/knowledge/chunks/batch` batch ingest chunks for a source
 - `POST /api/v1/retrieve` retrieve chunks by metadata filters (optional vector ranking)
 - `POST /api/v1/answer` generate answer with conclusion/key points/citations (DeepSeek)
+- `POST /api/v1/answer/hybrid` hybrid answer (LangGraph + LLM intent routing + biz tools + RAG evidence)
+
+### `/api/v1/answer/hybrid` 逻辑分支图
+```mermaid
+flowchart TD
+    A[POST /api/v1/answer/hybrid] --> B[intent_classifier<br/>LLM classify + rule fallback]
+    B -->|rule_explain| C[rule_explain_flow]
+    B -->|arrears_check| D[arrears_check_flow]
+    B -->|fee_verify| E[fee_verify_flow]
+
+    C --> F[rag_retrieve]
+    E --> F
+    D --> G[answer_synthesizer]
+    F --> G
+    G --> H[HybridAnswerResponse]
+```
 
 ### Retrieval 术语对照（中英）
 - `retrieve`：召回（从知识库取回候选内容，不是最终回答）
@@ -280,16 +298,20 @@ pytest
 ```
 
 ### Integration Tests
-Biz API route integration tests need a dedicated test database (default: `parksuite_biz_test`):
+通用前置：
 ```bash
 docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_biz_test;"
+docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_rag_test;"
+```
+
+Biz API route integration tests need a dedicated test database (default: `parksuite_biz_test`):
+```bash
 export BIZ_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz_test
 pytest tests/biz_api/test_routes_billing.py tests/biz_api/test_routes_orders.py
 ```
 
 RAG Core route integration tests need a dedicated test database (default: `parksuite_rag_test`):
 ```bash
-docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_rag_test;"
 export RAG_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag_test
 pytest tests/rag_core/test_routes_rag.py
 ```
@@ -314,6 +336,22 @@ Semantic-retrieval validation (paraphrase query -> vector recall, requires OpenA
 export OPENAI_API_KEY=your_key
 export RAG_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag_test
 pytest tests/rag_core/test_routes_retrieve_semantic.py
+```
+
+RAG hybrid answer API (`POST /api/v1/answer/hybrid`) integration tests (dataset-driven, tools/LLM mocked):
+```bash
+export RAG_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag_test
+pytest tests/rag_core/test_routes_hybrid.py
+```
+说明：
+- `test_routes_hybrid.py` 会从 `data/rag000/scenarios.jsonl` 读取场景作为测试输入。
+- 用例覆盖 `fee_verify` 与 `arrears_check` 两条分支；请求中带 `intent_hint`，确保分支可稳定复现。
+- 测试会 mock 掉 biz-api 调用与 LLM 生成，主要验证 `graph_trace/business_facts/citations` 的路由编排是否正确。
+- 若你要先手动刷新场景数据，可执行：
+```bash
+python scripts/rag000_seed_biz_scenarios.py \
+  --database-url postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz_seed \
+  --export-jsonl data/rag000/scenarios.jsonl
 ```
 
 To keep test data/tables for debugging:

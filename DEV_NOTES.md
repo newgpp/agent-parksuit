@@ -315,14 +315,71 @@
     - `tests/rag_core/test_routes_answer.py` (mocked LLM success/503 path)
 
 ### RAG-005: Hybrid orchestration (RAG + biz tools)
+- Introduce LangGraph-based orchestration for hybrid answering:
+  - graph nodes (target): intent_classifier -> {rule_explain_flow | arrears_check_flow | fee_verify_flow} -> answer_synthesizer
+  - use conditional edges to make branch path explicit and traceable
+  - keep graph minimal and auditable for later RAG-007/RAG-008 expansion
+- Use LLM-driven intent routing with rule fallback:
+  - LLM classifier outputs one of: `rule_explain` / `arrears_check` / `fee_verify`
+  - invalid or low-confidence outputs fallback to rule-based routing for determinism
+- Branch definitions:
+  - `rule_explain` -> RAG-only explanation flow
+  - `arrears_check` -> arrears tool (+ optional RAG evidence) flow
+  - `fee_verify` -> parking-order + billing-simulate + RAG evidence flow
 - Integrate biz tool outputs into answer composition for:
   - arrears check
   - fee verification
 - Split final response into:
   - business facts (tool result)
   - rule/policy evidence (RAG result)
+  - final conclusion (LLM synthesis over facts + evidence)
 - Acceptance:
+  - routing is primarily LLM-driven, with deterministic fallback
   - verification answers contain both computed facts and explainable references
+  - graph execution path is traceable (node order/status, selected branch)
+- Biz tool scope (MVP):
+  - `GET /api/v1/arrears-orders`
+    - intent: `arrears_check`
+    - purpose: query arrears orders by `plate_no/city_code`
+  - `GET /api/v1/parking-orders/{order_no}`
+    - intent: `fee_verify`
+    - purpose: fetch order-side business facts (`total_amount/paid_amount/arrears_amount`)
+  - `POST /api/v1/billing-rules/simulate`
+    - intent: `fee_verify`
+    - purpose: simulate expected amount from rule payload for verification
+  - `GET /api/v1/billing-rules` or `GET /api/v1/billing-rules/{rule_code}`
+    - intent: `rule_explain` (optional structured supplement)
+    - purpose: fetch configured rule metadata/version context
+- Intent -> tool mapping (target):
+  - `rule_explain`: RAG first, optional billing-rule lookup
+  - `arrears_check`: arrears-orders tool + optional RAG evidence
+  - `fee_verify`: parking-order detail + billing simulate + RAG evidence
+- Implemented:
+  - route:
+    - `src/agent_parksuite_rag_core/api/routes.py`
+    - `POST /api/v1/answer/hybrid` as thin route:
+      - request mapping + invoke service orchestrator + response assembly
+  - service:
+    - `src/agent_parksuite_rag_core/services/hybrid_answering.py`
+      - LLM intent classifier with deterministic fallback
+      - biz fact builders for `arrears_check` / `fee_verify`
+      - invokes workflow runner
+    - `src/agent_parksuite_rag_core/services/biz_tools.py` (biz-api client wrappers)
+    - `src/agent_parksuite_rag_core/services/answering.py` (`generate_hybrid_answer`)
+  - workflow:
+    - `src/agent_parksuite_rag_core/workflows/hybrid_answer.py`
+    - LangGraph conditional-branch topology:
+      - `intent_classifier`
+      - `rule_explain_flow -> rag_retrieve -> answer_synthesizer`
+      - `arrears_check_flow -> answer_synthesizer`
+      - `fee_verify_flow -> rag_retrieve -> answer_synthesizer`
+  - schema/config:
+    - `src/agent_parksuite_rag_core/schemas/rag.py` (`HybridAnswerRequest/HybridAnswerResponse`)
+    - `src/agent_parksuite_rag_core/config.py` (`biz_api_base_url/biz_api_timeout_seconds`)
+  - tests:
+    - `tests/rag_core/test_routes_hybrid.py`
+    - uses `data/rag000/scenarios.jsonl` as dataset-driven integration input
+    - validates `fee_verify` and `arrears_check` branch execution paths
 
 ### RAG-006: Evaluation baseline and seed dataset
 - Build evaluation set (30-50 Q&A) for parking fee consultation

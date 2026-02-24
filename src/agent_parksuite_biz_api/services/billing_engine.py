@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
+from zoneinfo import ZoneInfo
 
 
 def _parse_hhmm(value: str) -> tuple[int, int]:
@@ -62,7 +63,19 @@ def _quantize(value: Decimal) -> Decimal:
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-def simulate_fee(rule_payload: list[dict], entry_time: datetime, exit_time: datetime) -> dict:
+def _to_business_time(ts: datetime, business_tz: ZoneInfo) -> datetime:
+    if ts.tzinfo is None:
+        # Keep backward compatibility for naive timestamps in existing tests/calls.
+        return ts
+    return ts.astimezone(business_tz)
+
+
+def simulate_fee(
+    rule_payload: list[dict],
+    entry_time: datetime,
+    exit_time: datetime,
+    business_timezone: str = "Asia/Shanghai",
+) -> dict:
     if exit_time <= entry_time:
         return {
             "duration_minutes": 0,
@@ -71,11 +84,14 @@ def simulate_fee(rule_payload: list[dict], entry_time: datetime, exit_time: date
         }
 
     duration_minutes = int((exit_time - entry_time).total_seconds() // 60)
+    biz_tz = ZoneInfo(business_timezone)
+    entry_local = _to_business_time(entry_time, biz_tz)
+    exit_local = _to_business_time(exit_time, biz_tz)
 
     segment_minutes: dict[int, int] = {}
     segment_day_minutes: dict[int, OrderedDict[str, int]] = {}
-    cursor = entry_time
-    while cursor < exit_time:
+    cursor = entry_local
+    while cursor < exit_local:
         matched_index = None
         for idx, item in enumerate(rule_payload):
             if _item_matches(cursor, item):

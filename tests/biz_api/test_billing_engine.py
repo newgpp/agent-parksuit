@@ -162,3 +162,24 @@ def test_tiered_billing_across_days_with_night_free() -> None:
     assert result["breakdown"][1]["segment_name"] == "night_free"
     assert result["breakdown"][1]["minutes"] == 1440
     assert result["breakdown"][1]["amount"] == Decimal("0.00")
+
+
+def test_periodic_with_timezone_aware_input_should_use_business_timezone_window() -> None:
+    payload = [
+        {
+            "name": "day_periodic",
+            "type": "periodic",
+            "time_window": {"start": "08:00", "end": "20:00"},
+            "unit_minutes": 30,
+            "unit_price": 2,
+            "free_minutes": 0,
+        }
+    ]
+    # 01:00-02:00 UTC equals 09:00-10:00 in Asia/Shanghai.
+    result = simulate_fee(
+        payload,
+        datetime.fromisoformat("2026-02-01T01:00:00+00:00"),
+        datetime.fromisoformat("2026-02-01T02:00:00+00:00"),
+    )
+    assert result["duration_minutes"] == 60
+    assert result["total_amount"] == Decimal("4.00")
