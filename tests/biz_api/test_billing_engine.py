@@ -183,3 +183,24 @@ def test_periodic_with_timezone_aware_input_should_use_business_timezone_window(
     )
     assert result["duration_minutes"] == 60
     assert result["total_amount"] == Decimal("4.00")
+
+
+def test_periodic_with_time_window_timezone_should_match_by_window_timezone() -> None:
+    payload = [
+        {
+            "name": "utc_periodic",
+            "type": "periodic",
+            "time_window": {"start": "01:00", "end": "03:00", "timezone": "UTC"},
+            "unit_minutes": 30,
+            "unit_price": 2,
+            "free_minutes": 0,
+        }
+    ]
+    # 01:00-02:00 UTC is inside the UTC-configured window.
+    result = simulate_fee(
+        payload,
+        datetime.fromisoformat("2026-02-01T01:00:00+00:00"),
+        datetime.fromisoformat("2026-02-01T02:00:00+00:00"),
+    )
+    assert result["duration_minutes"] == 60
+    assert result["total_amount"] == Decimal("4.00")

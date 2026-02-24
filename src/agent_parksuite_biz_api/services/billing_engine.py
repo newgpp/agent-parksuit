@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
+from functools import lru_cache
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -10,6 +11,17 @@ from zoneinfo import ZoneInfo
 def _parse_hhmm(value: str) -> tuple[int, int]:
     hours, minutes = value.split(":", 1)
     return int(hours), int(minutes)
+
+
+@lru_cache(maxsize=32)
+def _load_timezone(tz_name: str) -> ZoneInfo:
+    return ZoneInfo(tz_name)
+
+
+def _to_named_timezone(ts: datetime, tz_name: str) -> datetime:
+    if ts.tzinfo is None:
+        return ts
+    return ts.astimezone(_load_timezone(tz_name))
 
 
 def _in_time_window(ts: datetime, start: str, end: str) -> bool:
@@ -28,11 +40,14 @@ def _in_time_window(ts: datetime, start: str, end: str) -> bool:
 
 
 def _item_matches(ts: datetime, item: dict) -> bool:
+    window = item.get("time_window") or {}
+    window_timezone = str(window.get("timezone", "Asia/Shanghai"))
+    local_ts = _to_named_timezone(ts, window_timezone)
+
     weekdays = item.get("weekdays")
-    if weekdays and ts.isoweekday() not in weekdays:
+    if weekdays and local_ts.isoweekday() not in weekdays:
         return False
 
-    window = item.get("time_window")
     if not window:
         return True
 
@@ -40,7 +55,7 @@ def _item_matches(ts: datetime, item: dict) -> bool:
     end = window.get("end")
     if not (start and end):
         return True
-    return _in_time_window(ts, str(start), str(end))
+    return _in_time_window(local_ts, str(start), str(end))
 
 
 def _compute_tiered_amount(units: int, unit_minutes: int, tiers: list[dict]) -> Decimal:

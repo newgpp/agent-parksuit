@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
 
@@ -102,6 +103,13 @@ class BillingSimulateResponse(BaseModel):
 class TimeWindow(BaseModel):
     start: str = Field(description="时间窗口开始，格式 HH:MM")
     end: str = Field(description="时间窗口结束，格式 HH:MM")
+    timezone: str = Field(default="Asia/Shanghai", description="时间窗口时区，默认 Asia/Shanghai")
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str) -> str:
+        ZoneInfo(value)
+        return value
 
 
 class TierPriceRule(BaseModel):
