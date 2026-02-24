@@ -33,8 +33,7 @@ target_metadata = [BizBase.metadata, RagBase.metadata]
 
 def _resolve_database_url() -> str:
     return (
-        os.getenv("DATABASE_URL")
-        or os.getenv("BIZ_DATABASE_URL")
+        os.getenv("BIZ_DATABASE_URL")
         or os.getenv("RAG_DATABASE_URL")
         or config.get_main_option("sqlalchemy.url")
     )

@@ -62,10 +62,10 @@ uvicorn agent_parksuite_rag_core.main:app --reload --port 8002
 ## DB Migrations (Alembic)
 ```bash
 # Biz DB
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz alembic upgrade head
+BIZ_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz alembic upgrade head
 
 # Rag DB
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag alembic upgrade head
+RAG_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag alembic upgrade head
 ```
 
 If you see `No module named 'greenlet'`, install dependencies again:
@@ -76,20 +76,20 @@ pip install -e .[dev]
 ## Init Biz Tables
 推荐方式（使用 Alembic 初始化 `parksuite_biz`）：
 ```bash
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz alembic upgrade head
+BIZ_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz alembic upgrade head
 ```
 
 ## Init RAG Core Tables
 使用 Alembic 初始化 `parksuite_rag`（会创建 `knowledge_sources` / `knowledge_chunks`）：
 ```bash
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag alembic upgrade head
+RAG_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag alembic upgrade head
 ```
 
 ## Init RAG Test Dataset (RAG-000)
 建议使用独立种子库 `parksuite_biz_seed`（不要复用 `parksuite_biz_test`）：
 ```bash
 docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_biz_seed;"
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz_seed alembic upgrade head
+BIZ_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz_seed alembic upgrade head
 ```
 
 执行种子脚本（写入 `parksuite_biz_seed`，同时导出 JSONL）：
@@ -177,195 +177,7 @@ flowchart TD
 - `top_k`：召回条数上限（返回前 K 条）
 - `source` / `knowledge source`：知识来源（文档级来源记录）
 
-## RAG-002 Ingestion Pipeline
-从 `RAG-000` 场景集生成知识分块并写入 `parksuite_rag`：
-```bash
-python scripts/rag002_ingest_knowledge.py \
-  --database-url postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag \
-  --input-type scenarios_jsonl \
-  --input-path data/rag000/scenarios.jsonl \
-  --replace-existing
-```
-
-### RAG-002 初始化与验收（推荐顺序）
-1. （可选）重建 `parksuite_rag`（当迁移状态异常/历史脏数据较多时推荐）
-```bash
-docker exec -it parksuite-pg psql -U postgres -d postgres -c "DROP DATABASE IF EXISTS parksuite_rag;"
-docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_rag;"
-docker exec -it parksuite-pg psql -U postgres -d parksuite_rag -c "CREATE EXTENSION IF NOT EXISTS vector;"
-```
-
-2. 初始化 `parksuite_rag` 表结构
-```bash
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag alembic upgrade head
-```
-说明：当前迁移脚本会按“当前连接数据库名”判断执行目标，避免误跳过 `parksuite_rag` 初始化。
-
-3. 生成 `RAG-000` 场景数据（写入 `parksuite_biz_seed` + 导出 JSONL）
-```bash
-python scripts/rag000_seed_biz_scenarios.py \
-  --database-url postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz_seed \
-  --export-jsonl data/rag000/scenarios.jsonl
-```
-
-4. 执行 `RAG-002` 入库（默认 deterministic embedding）
-```bash
-python scripts/rag002_ingest_knowledge.py \
-  --database-url postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag \
-  --input-type scenarios_jsonl \
-  --input-path data/rag000/scenarios.jsonl \
-  --replace-existing
-```
-
-5. SQL 验收（`parksuite_rag`）
-```sql
--- source 总数（预期 40：20 个 scenario * 2 个 doc_type）
-SELECT COUNT(*) FROM knowledge_sources WHERE source_id LIKE 'RAG000-%';
-
--- chunk 总数（应 > 0）
-SELECT COUNT(*) FROM knowledge_chunks kc
-JOIN knowledge_sources ks ON ks.id = kc.source_pk
-WHERE ks.source_id LIKE 'RAG000-%';
-```
-
-6. 接口验收（启动 `rag-core` 后）
-```bash
-curl -X POST "http://127.0.0.1:8002/api/v1/retrieve" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "上海A场怎么计费",
-    "query_embedding": null,
-    "top_k": 5,
-    "doc_type": "rule_explain",
-    "source_type": "biz_derived",
-    "city_code": "310100",
-    "lot_code": "SCN-LOT-A",
-    "at_time": "2026-02-10T10:00:00+08:00",
-    "include_inactive": false
-  }'
-```
-预期：返回 `items` 非空，且结果包含 `source_id/doc_type/content` 字段。
-
-可选：使用 OpenAI embedding
-```bash
-export OPENAI_API_KEY=your_key
-python scripts/rag002_ingest_knowledge.py \
-  --embedding-provider openai \
-  --embedding-model text-embedding-3-small
-```
-
-可选：导入 Markdown 文档
-```bash
-python scripts/rag002_ingest_knowledge.py \
-  --input-type markdown \
-  --input-path docs/rag_sources \
-  --source-prefix POLICY \
-  --replace-existing
-```
-
-### Billing rule payload example
-```json
-{
-  "rule_code": "SH-PUDONG-A",
-  "name": "Pudong A v1",
-  "status": "enabled",
-  "scope": {
-    "scope_type": "lot_code",
-    "city_code": "310100",
-    "lot_codes": ["LOT-A", "LOT-B"]
-  },
-  "version": {
-    "effective_from": "2026-02-23T00:00:00",
-    "effective_to": null,
-    "priority": 100,
-    "rule_payload": [
-      {
-        "name": "day_periodic",
-        "type": "periodic",
-        "time_window": {"start": "08:00", "end": "22:00"},
-        "unit_minutes": 30,
-        "unit_price": 2,
-        "free_minutes": 30,
-        "max_charge": 30
-      },
-      {
-        "name": "night_free",
-        "type": "free",
-        "time_window": {"start": "22:00", "end": "08:00"}
-      }
-    ]
-  }
-}
-```
-
-## Tests
-```bash
-pytest
-```
-
-### Integration Tests
-通用前置：
-```bash
-docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_biz_test;"
-docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_rag_test;"
-```
-
-Biz API route integration tests need a dedicated test database (default: `parksuite_biz_test`):
-```bash
-export BIZ_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz_test
-pytest tests/biz_api/test_routes_billing.py tests/biz_api/test_routes_orders.py
-```
-
-RAG Core route integration tests need a dedicated test database (default: `parksuite_rag_test`):
-```bash
-export RAG_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag_test
-pytest tests/rag_core/test_routes_rag.py
-```
-
-RAG retrieve API (`POST /api/v1/retrieve`) focused integration tests:
-```bash
-export RAG_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag_test
-pytest tests/rag_core/test_routes_retrieve.py
-```
-
-RAG answer API (`POST /api/v1/answer`) route tests (LLM mocked):
-```bash
-export RAG_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag_test
-pytest tests/rag_core/test_routes_answer.py
-```
-说明：
-- 该用例验证 `POST /api/v1/answer` 的路由编排与返回结构（`conclusion/key_points/citations`）。
-- 测试中已对 LLM 调用做 mock，不依赖真实 DeepSeek/OpenAI 网络请求。
-
-Semantic-retrieval validation (paraphrase query -> vector recall, requires OpenAI embedding):
-```bash
-export OPENAI_API_KEY=your_key
-export RAG_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag_test
-pytest tests/rag_core/test_routes_retrieve_semantic.py
-```
-
-RAG hybrid answer API (`POST /api/v1/answer/hybrid`) integration tests (dataset-driven, tools/LLM mocked):
-```bash
-export RAG_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag_test
-pytest tests/rag_core/test_routes_hybrid.py
-```
-说明：
-- `test_routes_hybrid.py` 会从 `data/rag000/scenarios.jsonl` 读取场景作为测试输入。
-- 用例覆盖 `fee_verify` 与 `arrears_check` 两条分支；请求中带 `intent_hint`，确保分支可稳定复现。
-- 测试会 mock 掉 biz-api 调用与 LLM 生成，主要验证 `graph_trace/business_facts/citations` 的路由编排是否正确。
-- 若你要先手动刷新场景数据，可执行：
-```bash
-python scripts/rag000_seed_biz_scenarios.py \
-  --database-url postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz_seed \
-  --export-jsonl data/rag000/scenarios.jsonl
-```
-
-To keep test data/tables for debugging:
-```bash
-export KEEP_TEST_DATA=1
-pytest tests/biz_api/test_routes_billing.py tests/biz_api/test_routes_orders.py
-```
-
-### Manual E2E Tests (Real LLM)
-完整步骤与示例请求已拆分到：
-- [Manual E2E Answer Tests](docs/manual_e2e_answer_tests.md)
+## Documentation
+- [RAG Ingestion](docs/rag_ingestion.md)
+- [PR Acceptance Notes](docs/pr_acceptance.md)
+- [Testing](docs/testing.md)

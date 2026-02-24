@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 from loguru import logger
 
 from agent_parksuite_rag_core.clients.biz_api_client import BizApiClient
+from agent_parksuite_rag_core.clients.llm_client import get_chat_llm
 from agent_parksuite_rag_core.config import settings
 from agent_parksuite_rag_core.schemas.answer import HybridAnswerRequest
 from agent_parksuite_rag_core.schemas.retrieve import RetrieveResponseItem
@@ -45,13 +45,7 @@ async def _classify_intent(payload: HybridAnswerRequest) -> str:
         logger.info("hybrid classify source=rule_fallback reason=no_api_key intent={}", intent)
         return intent
 
-    llm = ChatOpenAI(
-        model=settings.deepseek_model,
-        api_key=settings.deepseek_api_key,
-        base_url=settings.deepseek_base_url,
-        temperature=0,
-        timeout=8,
-    )
+    llm = get_chat_llm(temperature=0, timeout_seconds=8)
 
     messages = [
         SystemMessage(

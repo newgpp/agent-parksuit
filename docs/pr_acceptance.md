@@ -1,9 +1,67 @@
-# Manual E2E Tests (Real LLM)
+# Acceptance Guide
 
-用于真实链路联调（入库数据 + 启动服务 + 连接 DeepSeek + 调 `/api/v1/*`），区别于 `pytest` 自动化测试。
+用于 PR 验收与真实链路联调，包含自动验收（入库与检索）和手工 E2E（真实 LLM + 真实服务调用）。
 
-## `/api/v1/answer`（真实 LLM）
+## 1. 数据与入库验收（RAG-002）
+1. （可选）重建 `parksuite_rag`（当迁移状态异常或历史脏数据较多时）
+```bash
+docker exec -it parksuite-pg psql -U postgres -d postgres -c "DROP DATABASE IF EXISTS parksuite_rag;"
+docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_rag;"
+docker exec -it parksuite-pg psql -U postgres -d parksuite_rag -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
 
+2. 初始化 `parksuite_rag` 表结构
+```bash
+RAG_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag alembic upgrade head
+```
+说明：迁移脚本会按当前连接数据库名判断执行目标，避免误跳过 `parksuite_rag`。
+
+3. 生成 `RAG-000` 场景数据（写入 `parksuite_biz_seed` 并导出 JSONL）
+```bash
+python scripts/rag000_seed_biz_scenarios.py \
+  --database-url postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz_seed \
+  --export-jsonl data/rag000/scenarios.jsonl
+```
+
+4. 执行 `RAG-002` 入库
+```bash
+python scripts/rag002_ingest_knowledge.py \
+  --database-url postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag \
+  --input-type scenarios_jsonl \
+  --input-path data/rag000/scenarios.jsonl \
+  --replace-existing
+```
+
+5. SQL 验收（`parksuite_rag`）
+```sql
+-- source 总数（预期 40：20 个 scenario * 2 个 doc_type）
+SELECT COUNT(*) FROM knowledge_sources WHERE source_id LIKE 'RAG000-%';
+
+-- chunk 总数（应 > 0）
+SELECT COUNT(*) FROM knowledge_chunks kc
+JOIN knowledge_sources ks ON ks.id = kc.source_pk
+WHERE ks.source_id LIKE 'RAG000-%';
+```
+
+6. 检索接口验收（`/api/v1/retrieve`）
+```bash
+curl -X POST "http://127.0.0.1:8002/api/v1/retrieve" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "上海A场怎么计费",
+    "query_embedding": null,
+    "top_k": 5,
+    "doc_type": "rule_explain",
+    "source_type": "biz_derived",
+    "city_code": "310100",
+    "lot_code": "SCN-LOT-A",
+    "at_time": "2026-02-10T10:00:00+08:00",
+    "include_inactive": false
+  }'
+```
+预期：`items` 非空，且包含 `source_id/doc_type/content`。
+
+## 2. 手工 E2E：`/api/v1/answer`（真实 LLM）
 ### 前置条件
 ```bash
 # 准备 RAG 数据
@@ -13,7 +71,7 @@ python scripts/rag002_ingest_knowledge.py \
   --input-path data/rag000/scenarios.jsonl \
   --replace-existing
 
-# 配置 LLM 环境变量（DeepSeek）
+# 配置 LLM（DeepSeek）
 export RAG_DEEPSEEK_API_KEY=your_key
 export RAG_DEEPSEEK_BASE_URL=https://api.deepseek.com
 export RAG_DEEPSEEK_MODEL=deepseek-chat
@@ -80,16 +138,15 @@ curl -X POST "http://127.0.0.1:8002/api/v1/answer" \
 
 ### 验收检查点
 - HTTP 200
-- 返回字段包含 `conclusion`、`key_points`、`citations`
+- 返回包含 `conclusion`、`key_points`、`citations`
 - `retrieved_count > 0`
-- `citations` 中可看到 `source_id/chunk_id/doc_type/snippet`
+- `citations` 含 `source_id/chunk_id/doc_type/snippet`
 
-## `/api/v1/answer/hybrid`（真实 LLM + 真实 biz-api）
-
+## 3. 手工 E2E：`/api/v1/answer/hybrid`（真实 LLM + 真实 biz-api）
 ### 前置条件
 - `biz-api` 已启动（默认 `http://127.0.0.1:8001`）
 - `rag-core` 已启动（`http://127.0.0.1:8002`）
-- `.env` 或环境变量中 `RAG_BIZ_API_BASE_URL` 指向可访问的 biz-api
+- `RAG_BIZ_API_BASE_URL` 指向可访问的 biz-api
 
 ### 启动服务
 ```bash
@@ -147,7 +204,43 @@ curl -X POST "http://127.0.0.1:8002/api/v1/answer/hybrid" \
 
 ### 验收检查点
 - HTTP 200
-- 返回字段包含 `intent`、`business_facts`、`conclusion`、`key_points`、`citations`、`graph_trace`
+- 返回包含 `intent`、`business_facts`、`conclusion`、`key_points`、`citations`、`graph_trace`
 - `graph_trace` 含 `intent_classifier:*` 且命中目标分支（`rule_explain_flow` / `arrears_check_flow` / `fee_verify_flow`）
 - `arrears_check` 时 `business_facts.arrears_count` 有值
 - `fee_verify` 时 `business_facts.amount_check_result/amount_check_action` 有值
+
+## 4. API 示例
+### Billing Rule Payload Example
+```json
+{
+  "rule_code": "SH-PUDONG-A",
+  "name": "Pudong A v1",
+  "status": "enabled",
+  "scope": {
+    "scope_type": "lot_code",
+    "city_code": "310100",
+    "lot_codes": ["LOT-A", "LOT-B"]
+  },
+  "version": {
+    "effective_from": "2026-02-23T00:00:00",
+    "effective_to": null,
+    "priority": 100,
+    "rule_payload": [
+      {
+        "name": "day_periodic",
+        "type": "periodic",
+        "time_window": {"start": "08:00", "end": "22:00"},
+        "unit_minutes": 30,
+        "unit_price": 2,
+        "free_minutes": 30,
+        "max_charge": 30
+      },
+      {
+        "name": "night_free",
+        "type": "free",
+        "time_window": {"start": "22:00", "end": "08:00"}
+      }
+    ]
+  }
+}
+```

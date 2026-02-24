@@ -4,9 +4,9 @@ import json
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 from loguru import logger
 
+from agent_parksuite_rag_core.clients.llm_client import get_chat_llm
 from agent_parksuite_rag_core.config import settings
 from agent_parksuite_rag_core.schemas.retrieve import RetrieveResponseItem
 
@@ -53,12 +53,7 @@ async def generate_answer_from_chunks(
     if not settings.deepseek_api_key:
         raise RuntimeError("RAG_DEEPSEEK_API_KEY is not configured")
 
-    llm = ChatOpenAI(
-        model=settings.deepseek_model,
-        api_key=settings.deepseek_api_key,
-        base_url=settings.deepseek_base_url,
-        temperature=0,
-    )
+    llm = get_chat_llm(temperature=0)
     context = _render_context(items)
     messages = [
         SystemMessage(
@@ -112,12 +107,7 @@ async def generate_hybrid_answer(
     if not settings.deepseek_api_key:
         raise RuntimeError("RAG_DEEPSEEK_API_KEY is not configured")
 
-    llm = ChatOpenAI(
-        model=settings.deepseek_model,
-        api_key=settings.deepseek_api_key,
-        base_url=settings.deepseek_base_url,
-        temperature=0,
-    )
+    llm = get_chat_llm(temperature=0)
     context = _render_context(items)
     facts = json.dumps(business_facts, ensure_ascii=False)
     messages = [
