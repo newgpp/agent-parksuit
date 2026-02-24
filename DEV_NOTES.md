@@ -260,6 +260,19 @@
   - fee calculation walk-through snippets
 - Acceptance:
   - imported knowledge is retrievable and traceable by source/version
+- Implemented:
+  - service:
+    - `src/agent_parksuite_rag_core/services/ingestion.py`
+    - scenarios JSONL -> source/chunk draft generation
+    - markdown -> source/chunk draft generation
+    - deterministic embedder (default) + OpenAI embedder (optional)
+    - DB upsert for `knowledge_sources` + `knowledge_chunks`
+  - script:
+    - `scripts/rag002_ingest_knowledge.py`
+    - supports `--input-type scenarios_jsonl|markdown`
+    - supports `--embedding-provider deterministic|openai`
+  - tests:
+    - `tests/rag_core/test_ingestion_pipeline.py`
 
 ### RAG-003: Retrieve API (RAG retrieval core)
 - Implement `POST /api/v1/retrieve`
