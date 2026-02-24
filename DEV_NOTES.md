@@ -281,6 +281,10 @@
 - Ensure retrieval prefers dataset-aligned chunks for scenario-based queries
 - Acceptance:
   - retrieval honors metadata constraints and returns stable top-k results
+- Repository refactor (pre-service split):
+  - add `src/agent_parksuite_rag_core/repositories/knowledge.py`
+  - move DB read/write logic for source/chunk/retrieve out of API layer
+  - API layer now focuses on request validation + HTTP error mapping + response composition
 - Implemented:
   - route:
     - `src/agent_parksuite_rag_core/api/routes.py`
@@ -362,9 +366,12 @@
   - service:
     - `src/agent_parksuite_rag_core/services/hybrid_answering.py`
       - LLM intent classifier with deterministic fallback
-      - biz fact builders for `arrears_check` / `fee_verify`
+      - invokes tools for `arrears_check` / `fee_verify` facts
       - invokes workflow runner
-    - `src/agent_parksuite_rag_core/services/biz_tools.py` (biz-api client wrappers)
+  - `src/agent_parksuite_rag_core/clients/biz_api_client.py` (biz-api client wrappers)
+  - tools:
+    - `src/agent_parksuite_rag_core/tools/biz_fact_tools.py`
+    - wraps biz-client calls into workflow-facing tool functions
     - `src/agent_parksuite_rag_core/services/answering.py` (`generate_hybrid_answer`)
   - workflow:
     - `src/agent_parksuite_rag_core/workflows/hybrid_answer.py`

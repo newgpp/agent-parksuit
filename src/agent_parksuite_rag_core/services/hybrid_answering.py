@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-from datetime import datetime
-from decimal import Decimal
 from typing import Any, Awaitable, Callable
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from loguru import logger
 
+from agent_parksuite_rag_core.clients.biz_api_client import BizApiClient
 from agent_parksuite_rag_core.config import settings
 from agent_parksuite_rag_core.schemas.rag import HybridAnswerRequest, RetrieveResponseItem
 from agent_parksuite_rag_core.services.answering import _extract_json_payload, generate_hybrid_answer
-from agent_parksuite_rag_core.services.biz_tools import BizApiClient
+from agent_parksuite_rag_core.tools.biz_fact_tools import BizFactTools
 from agent_parksuite_rag_core.workflows.hybrid_answer import HybridGraphState, run_hybrid_workflow
 
 RetrieveFn = Callable[[HybridAnswerRequest], Awaitable[list[RetrieveResponseItem]]]
@@ -21,10 +20,6 @@ def _log_payload_text(text: str) -> str:
     if settings.llm_log_full_payload:
         return text
     return text[: settings.llm_log_max_chars]
-
-
-def _normalize_decimal_str(value: Any) -> str:
-    return str(Decimal(str(value)).quantize(Decimal("0.01")))
 
 
 def _rule_route_intent(payload: HybridAnswerRequest) -> str:
@@ -106,70 +101,6 @@ async def _classify_intent(payload: HybridAnswerRequest, request_id: str = "") -
     return fallback_intent
 
 
-async def _build_arrears_facts(payload: HybridAnswerRequest, biz_client: BizApiClient) -> dict[str, Any]:
-    logger.info("hybrid biz_tool=arrears_orders start plate_no={} city_code={}", payload.plate_no, payload.city_code)
-    rows = await biz_client.get_arrears_orders(plate_no=payload.plate_no, city_code=payload.city_code)
-    logger.info("hybrid biz_tool=arrears_orders done count={}", len(rows))
-    return {
-        "intent": "arrears_check",
-        "plate_no": payload.plate_no,
-        "city_code": payload.city_code,
-        "arrears_count": len(rows),
-        "arrears_order_nos": [str(item.get("order_no", "")) for item in rows],
-        "orders": rows,
-    }
-
-
-async def _build_fee_verify_facts(payload: HybridAnswerRequest, biz_client: BizApiClient) -> dict[str, Any]:
-    if not payload.order_no:
-        logger.info("hybrid biz_tool=fee_verify skip reason=missing_order_no")
-        return {"intent": "fee_verify", "error": "order_no is required for fee_verify"}
-
-    logger.info("hybrid biz_tool=fee_verify start order_no={}", payload.order_no)
-    order = await biz_client.get_parking_order(order_no=payload.order_no)
-    rule_code = payload.rule_code or str(order.get("billing_rule_code", ""))
-
-    try:
-        entry_time = payload.entry_time or datetime.fromisoformat(str(order.get("entry_time")))
-    except Exception:
-        logger.warning("hybrid biz_tool=fee_verify invalid_entry_time order_no={}", payload.order_no)
-        return {"intent": "fee_verify", "error": "entry_time is invalid for fee_verify"}
-
-    exit_raw = payload.exit_time or order.get("exit_time")
-    if exit_raw is None:
-        logger.warning("hybrid biz_tool=fee_verify missing_exit_time order_no={}", payload.order_no)
-        return {"intent": "fee_verify", "error": "exit_time is required for fee_verify"}
-
-    try:
-        exit_time = exit_raw if isinstance(exit_raw, datetime) else datetime.fromisoformat(str(exit_raw))
-    except Exception:
-        logger.warning("hybrid biz_tool=fee_verify invalid_exit_time order_no={}", payload.order_no)
-        return {"intent": "fee_verify", "error": "exit_time is invalid for fee_verify"}
-
-    sim = await biz_client.simulate_billing(rule_code=rule_code, entry_time=entry_time, exit_time=exit_time)
-    order_total = _normalize_decimal_str(order.get("total_amount", "0"))
-    sim_total = _normalize_decimal_str(sim.get("total_amount", "0"))
-    is_consistent = order_total == sim_total
-    logger.info(
-        "hybrid biz_tool=fee_verify done order_no={} amount_check_result={}",
-        payload.order_no,
-        "一致" if is_consistent else "不一致",
-    )
-    return {
-        "intent": "fee_verify",
-        "order_no": payload.order_no,
-        "rule_code": rule_code,
-        "entry_time": entry_time.isoformat(),
-        "exit_time": exit_time.isoformat(),
-        "order_total_amount": order_total,
-        "sim_total_amount": sim_total,
-        "amount_check_result": "一致" if is_consistent else "不一致",
-        "amount_check_action": "自动通过" if is_consistent else "需人工复核",
-        "order": order,
-        "simulation": sim,
-    }
-
-
 async def run_hybrid_answering(
     payload: HybridAnswerRequest,
     retrieve_fn: RetrieveFn,
@@ -188,12 +119,13 @@ async def run_hybrid_answering(
         base_url=settings.biz_api_base_url,
         timeout_seconds=settings.biz_api_timeout_seconds,
     )
+    fact_tools = BizFactTools(biz_client=biz_client)
 
     async def _arrears_facts_fn(p: HybridAnswerRequest) -> dict[str, Any]:
-        return await _build_arrears_facts(p, biz_client)
+        return await fact_tools.build_arrears_facts(p)
 
     async def _fee_facts_fn(p: HybridAnswerRequest) -> dict[str, Any]:
-        return await _build_fee_verify_facts(p, biz_client)
+        return await fact_tools.build_fee_verify_facts(p)
 
     async def _synthesize_fn(
         query: str,
