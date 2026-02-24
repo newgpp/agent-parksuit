@@ -35,14 +35,14 @@ def _rule_route_intent(payload: HybridAnswerRequest) -> str:
     return "rule_explain"
 
 
-async def _classify_intent(payload: HybridAnswerRequest, request_id: str = "") -> str:
+async def _classify_intent(payload: HybridAnswerRequest) -> str:
     if payload.intent_hint in {"rule_explain", "arrears_check", "fee_verify"}:
-        logger.info("hybrid[{}] classify source=intent_hint intent={}", request_id, payload.intent_hint)
+        logger.info("hybrid classify source=intent_hint intent={}", payload.intent_hint)
         return payload.intent_hint
 
     if not settings.deepseek_api_key:
         intent = _rule_route_intent(payload)
-        logger.info("hybrid[{}] classify source=rule_fallback reason=no_api_key intent={}", request_id, intent)
+        logger.info("hybrid classify source=rule_fallback reason=no_api_key intent={}", intent)
         return intent
 
     llm = ChatOpenAI(
@@ -71,32 +71,30 @@ async def _classify_intent(payload: HybridAnswerRequest, request_id: str = "") -
             )
         ),
     ]
-    logger.info("llm[intent][{}] input query={}", request_id, payload.query[:200])
-    logger.info("llm[intent][{}] input_prompt={}", request_id, _log_payload_text(messages[1].content))
+    logger.info("llm[intent] input query={}", payload.query[:200])
+    logger.info("llm[intent] input_prompt={}", _log_payload_text(messages[1].content))
 
     try:
         result = await llm.ainvoke(messages)
     except Exception as exc:
         intent = _rule_route_intent(payload)
         logger.warning(
-            "hybrid[{}] classify source=rule_fallback reason=llm_error intent={} error={}",
-            request_id,
+            "hybrid classify source=rule_fallback reason=llm_error intent={} error={}",
             intent,
             exc.__class__.__name__,
         )
         return intent
 
     raw_text = str(result.content)
-    logger.info("llm[intent][{}] output raw={}", request_id, _log_payload_text(raw_text))
+    logger.info("llm[intent] output raw={}", _log_payload_text(raw_text))
     parsed = _extract_json_payload(raw_text)
     intent = str((parsed or {}).get("intent", "")).strip()
     if intent in {"rule_explain", "arrears_check", "fee_verify"}:
-        logger.info("hybrid[{}] classify source=llm intent={}", request_id, intent)
+        logger.info("hybrid classify source=llm intent={}", intent)
         return intent
     fallback_intent = _rule_route_intent(payload)
     logger.info(
-        "hybrid[{}] classify source=rule_fallback reason=invalid_output intent={}",
-        request_id,
+        "hybrid classify source=rule_fallback reason=invalid_output intent={}",
         fallback_intent,
     )
     return fallback_intent
@@ -105,11 +103,9 @@ async def _classify_intent(payload: HybridAnswerRequest, request_id: str = "") -
 async def run_hybrid_answering(
     payload: HybridAnswerRequest,
     retrieve_fn: RetrieveFn,
-    request_id: str = "",
 ) -> HybridGraphState:
     logger.info(
-        "hybrid[{}] start query_len={} top_k={} hint={} city_code={} lot_code={}",
-        request_id,
+        "hybrid start query_len={} top_k={} hint={} city_code={} lot_code={}",
         len(payload.query),
         payload.top_k,
         payload.intent_hint,
@@ -139,11 +135,10 @@ async def run_hybrid_answering(
             items=items,
             business_facts=business_facts,
             intent=intent,
-            request_id=request_id,
         )
 
     async def _classify_fn(p: HybridAnswerRequest) -> str:
-        return await _classify_intent(p, request_id=request_id)
+        return await _classify_intent(p)
 
     return await run_hybrid_workflow(
         payload=payload,
@@ -152,5 +147,4 @@ async def run_hybrid_answering(
         arrears_facts_fn=_arrears_facts_fn,
         fee_facts_fn=_fee_facts_fn,
         synthesize_fn=_synthesize_fn,
-        request_id=request_id,
     )

@@ -33,12 +33,11 @@ async def run_hybrid_workflow(
     arrears_facts_fn: ArrearsFactsFn,
     fee_facts_fn: FeeFactsFn,
     synthesize_fn: SynthesizeFn,
-    request_id: str = "",
 ) -> HybridGraphState:
     async def _node_intent_classifier(state: HybridGraphState) -> HybridGraphState:
-        logger.info("hybrid[{}] node=intent_classifier start", request_id)
+        logger.info("hybrid node=intent_classifier start")
         intent = await classify_fn(state["payload"])
-        logger.info("hybrid[{}] node=intent_classifier intent={}", request_id, intent)
+        logger.info("hybrid node=intent_classifier intent={}", intent)
         return {
             "intent": intent,
             "trace": [*state.get("trace", []), f"intent_classifier:{intent}"],
@@ -53,18 +52,17 @@ async def run_hybrid_workflow(
         return "rule_explain_flow"
 
     async def _node_rule_explain_flow(state: HybridGraphState) -> HybridGraphState:
-        logger.info("hybrid[{}] node=rule_explain_flow", request_id)
+        logger.info("hybrid node=rule_explain_flow")
         return {
             "business_facts": {"intent": "rule_explain", "note": "RAG-only explanation flow"},
             "trace": [*state.get("trace", []), "rule_explain_flow"],
         }
 
     async def _node_arrears_check_flow(state: HybridGraphState) -> HybridGraphState:
-        logger.info("hybrid[{}] node=arrears_check_flow start", request_id)
+        logger.info("hybrid node=arrears_check_flow start")
         facts = await arrears_facts_fn(state["payload"])
         logger.info(
-            "hybrid[{}] node=arrears_check_flow arrears_count={}",
-            request_id,
+            "hybrid node=arrears_check_flow arrears_count={}",
             facts.get("arrears_count"),
         )
         return {
@@ -73,11 +71,10 @@ async def run_hybrid_workflow(
         }
 
     async def _node_fee_verify_flow(state: HybridGraphState) -> HybridGraphState:
-        logger.info("hybrid[{}] node=fee_verify_flow start", request_id)
+        logger.info("hybrid node=fee_verify_flow start")
         facts = await fee_facts_fn(state["payload"])
         logger.info(
-            "hybrid[{}] node=fee_verify_flow amount_check_result={} error={}",
-            request_id,
+            "hybrid node=fee_verify_flow amount_check_result={} error={}",
             facts.get("amount_check_result"),
             facts.get("error"),
         )
@@ -87,9 +84,9 @@ async def run_hybrid_workflow(
         }
 
     async def _node_rag_retrieve(state: HybridGraphState) -> HybridGraphState:
-        logger.info("hybrid[{}] node=rag_retrieve start", request_id)
+        logger.info("hybrid node=rag_retrieve start")
         items = await retrieve_fn(state["payload"])
-        logger.info("hybrid[{}] node=rag_retrieve retrieved_count={}", request_id, len(items))
+        logger.info("hybrid node=rag_retrieve retrieved_count={}", len(items))
         return {
             "retrieved_items": items,
             "trace": [*state.get("trace", []), f"rag_retrieve:{len(items)}"],
@@ -100,15 +97,14 @@ async def run_hybrid_workflow(
         facts = state.get("business_facts", {})
         intent = state.get("intent", "rule_explain")
         logger.info(
-            "hybrid[{}] node=answer_synthesizer start intent={} retrieved_count={} facts_keys={}",
-            request_id,
+            "hybrid node=answer_synthesizer start intent={} retrieved_count={} facts_keys={}",
             intent,
             len(items),
             sorted(facts.keys()),
         )
 
         if not items and not facts:
-            logger.info("hybrid[{}] node=answer_synthesizer no_data", request_id)
+            logger.info("hybrid node=answer_synthesizer no_data")
             return {
                 "conclusion": "未检索到可用证据，暂时无法回答该问题。",
                 "key_points": [],
@@ -123,8 +119,7 @@ async def run_hybrid_workflow(
             intent,
         )
         logger.info(
-            "hybrid[{}] node=answer_synthesizer done model={} key_points={}",
-            request_id,
+            "hybrid node=answer_synthesizer done model={} key_points={}",
             model_used,
             len(key_points),
         )

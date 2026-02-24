@@ -108,7 +108,6 @@ async def generate_hybrid_answer(
     items: list[RetrieveResponseItem],
     business_facts: dict[str, Any],
     intent: str = "rule_explain",
-    request_id: str = "",
 ) -> tuple[str, list[str], str]:
     if not settings.deepseek_api_key:
         raise RuntimeError("RAG_DEEPSEEK_API_KEY is not configured")
@@ -139,8 +138,7 @@ async def generate_hybrid_answer(
         ),
     ]
     logger.info(
-        "llm[hybrid][{}] input intent={} query={} evidence_count={} facts={} model={}",
-        request_id,
+        "llm[hybrid] input intent={} query={} evidence_count={} facts={} model={}",
         intent,
         query[:200],
         len(items),
@@ -148,16 +146,15 @@ async def generate_hybrid_answer(
         settings.deepseek_model,
     )
     logger.info(
-        "llm[hybrid][{}] input_prompt={}",
-        request_id,
+        "llm[hybrid] input_prompt={}",
         _log_payload_text(messages[1].content),
     )
     result = await llm.ainvoke(messages)
     raw_text = str(result.content)
-    logger.info("llm[hybrid][{}] output raw={}", request_id, _log_payload_text(raw_text))
+    logger.info("llm[hybrid] output raw={}", _log_payload_text(raw_text))
     parsed = _extract_json_payload(raw_text)
     if not parsed:
-        logger.info("llm[hybrid][{}] parse_result=raw_text_fallback", request_id)
+        logger.info("llm[hybrid] parse_result=raw_text_fallback")
         return raw_text.strip(), [], settings.deepseek_model
 
     conclusion = str(parsed.get("conclusion", "")).strip() or "未生成结论"
@@ -166,5 +163,5 @@ async def generate_hybrid_answer(
         key_points = [str(item).strip() for item in key_points_raw if str(item).strip()]
     else:
         key_points = []
-    logger.info("llm[hybrid][{}] parse_result=json key_points={}", request_id, len(key_points))
+    logger.info("llm[hybrid] parse_result=json key_points={}", len(key_points))
     return conclusion, key_points, settings.deepseek_model

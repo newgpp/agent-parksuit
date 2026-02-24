@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import uuid
-
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -158,10 +156,8 @@ async def answer_hybrid(
     session: AsyncSession = Depends(get_db_session),
 ) -> HybridAnswerResponse:
     repo = KnowledgeRepository(session=session, embedding_dim=settings.embedding_dim)
-    request_id = uuid.uuid4().hex[:8]
     logger.info(
-        "hybrid[{}] request received top_k={} hint={} source_ids={}",
-        request_id,
+        "hybrid request received top_k={} hint={} source_ids={}",
         payload.top_k,
         payload.intent_hint,
         len(payload.source_ids or []),
@@ -184,13 +180,13 @@ async def answer_hybrid(
             items = await repo.retrieve(retrieve_payload)
         except ValueError as exc:
             raise RuntimeError(str(exc)) from exc
-        logger.info("hybrid[{}] retrieve done count={}", request_id, len(items))
+        logger.info("hybrid retrieve done count={}", len(items))
         return items
 
     try:
-        result = await run_hybrid_answering(payload=payload, retrieve_fn=_hybrid_retrieve, request_id=request_id)
+        result = await run_hybrid_answering(payload=payload, retrieve_fn=_hybrid_retrieve)
     except RuntimeError as exc:
-        logger.exception("hybrid[{}] failed with runtime error", request_id)
+        logger.exception("hybrid failed with runtime error")
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     items = result.get("retrieved_items", [])
@@ -216,8 +212,7 @@ async def answer_hybrid(
         graph_trace=list(result.get("trace", [])),
     )
     logger.info(
-        "hybrid[{}] response ready intent={} retrieved_count={} trace={}",
-        request_id,
+        "hybrid response ready intent={} retrieved_count={} trace={}",
         response.intent,
         response.retrieved_count,
         response.graph_trace,
