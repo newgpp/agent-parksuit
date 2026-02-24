@@ -1,7 +1,11 @@
 from datetime import datetime
 from decimal import Decimal
 
-from agent_parksuite_biz_api.services.billing_engine import simulate_fee
+from agent_parksuite_biz_api.services.billing_engine import (
+    _collect_segment_minutes_by_scan,
+    collect_segment_minutes_by_window,
+    simulate_fee,
+)
 
 
 def test_periodic_with_free_minutes_and_cap() -> None:
@@ -204,3 +208,52 @@ def test_periodic_with_time_window_timezone_should_match_by_window_timezone() ->
     )
     assert result["duration_minutes"] == 60
     assert result["total_amount"] == Decimal("4.00")
+
+
+def test_collect_segment_minutes_by_window_matches_scan() -> None:
+    cases = [
+        (
+            [
+                {
+                    "name": "day_periodic",
+                    "type": "periodic",
+                    "time_window": {"start": "08:00", "end": "20:00"},
+                    "unit_minutes": 30,
+                    "unit_price": 2,
+                },
+                {
+                    "name": "night_free",
+                    "type": "free",
+                    "time_window": {"start": "20:00", "end": "08:00"},
+                },
+            ],
+            datetime(2026, 2, 1, 9, 0, 0),
+            datetime(2026, 2, 3, 8, 29, 0),
+        ),
+        (
+            [
+                {
+                    "name": "utc_day_periodic",
+                    "type": "periodic",
+                    "time_window": {"start": "01:00", "end": "03:00", "timezone": "UTC"},
+                    "unit_minutes": 30,
+                    "unit_price": 2,
+                },
+                {
+                    "name": "sh_night_free",
+                    "type": "free",
+                    "time_window": {"start": "22:00", "end": "08:00", "timezone": "Asia/Shanghai"},
+                },
+            ],
+            datetime.fromisoformat("2026-02-01T00:30:00+00:00"),
+            datetime.fromisoformat("2026-02-02T03:30:00+00:00"),
+        ),
+    ]
+
+    for payload, entry_time, exit_time in cases:
+        old_minutes, old_day_minutes = _collect_segment_minutes_by_scan(payload, entry_time, exit_time)
+        new_minutes, new_day_minutes = collect_segment_minutes_by_window(payload, entry_time, exit_time)
+        assert new_minutes == old_minutes
+        assert {idx: dict(day_map) for idx, day_map in new_day_minutes.items()} == {
+            idx: dict(day_map) for idx, day_map in old_day_minutes.items()
+        }
