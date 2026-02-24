@@ -26,7 +26,12 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-@router.post("/knowledge/sources", response_model=KnowledgeSourceResponse)
+@router.post(
+    "/knowledge/sources",
+    response_model=KnowledgeSourceResponse,
+    summary="新增或更新知识来源",
+    description="按 source_id 幂等写入知识来源元数据，用于后续分块入库与检索过滤。",
+)
 async def upsert_knowledge_source(
     payload: KnowledgeSourceUpsertRequest,
     session: AsyncSession = Depends(get_db_session),
@@ -69,7 +74,12 @@ async def upsert_knowledge_source(
     return KnowledgeSourceResponse.model_validate(row, from_attributes=True)
 
 
-@router.post("/knowledge/chunks/batch", response_model=ChunkIngestResponse)
+@router.post(
+    "/knowledge/chunks/batch",
+    response_model=ChunkIngestResponse,
+    summary="批量写入知识分块",
+    description="向指定 source_id 批量写入分块和向量；可选覆盖该来源下历史分块。",
+)
 async def ingest_knowledge_chunks(
     payload: ChunkIngestRequest,
     session: AsyncSession = Depends(get_db_session),
@@ -107,7 +117,12 @@ async def ingest_knowledge_chunks(
     return ChunkIngestResponse(source_pk=source.id, inserted_count=len(rows))
 
 
-@router.post("/retrieve", response_model=RetrieveResponse)
+@router.post(
+    "/retrieve",
+    response_model=RetrieveResponse,
+    summary="检索知识分块",
+    description="支持按业务元数据过滤，可选传入 query_embedding 进行向量相似度排序。",
+)
 async def retrieve(
     payload: RetrieveRequest,
     session: AsyncSession = Depends(get_db_session),
