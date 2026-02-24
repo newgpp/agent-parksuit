@@ -19,6 +19,7 @@ dependencies = [
   "greenlet==3.1.1",
   "asyncpg==0.30.0",
   "pgvector==0.3.6",
+  "loguru==0.7.3",
 ]
 
 [project.optional-dependencies]

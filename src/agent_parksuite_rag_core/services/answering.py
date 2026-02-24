@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
+from loguru import logger
 
 from agent_parksuite_rag_core.config import settings
 from agent_parksuite_rag_core.schemas.rag import RetrieveResponseItem
-
-logger = logging.getLogger(__name__)
 
 
 def _log_payload_text(text: str) -> str:
@@ -78,18 +76,18 @@ async def generate_answer_from_chunks(
         ),
     ]
     logger.info(
-        "llm[answer] input query=%s evidence_count=%d model=%s",
+        "llm[answer] input query={} evidence_count={} model={}",
         query[:200],
         len(items),
         settings.deepseek_model,
     )
     logger.info(
-        "llm[answer] input_prompt=%s",
+        "llm[answer] input_prompt={}",
         _log_payload_text(messages[1].content),
     )
     result = await llm.ainvoke(messages)
     raw_text = str(result.content)
-    logger.info("llm[answer] output raw=%s", _log_payload_text(raw_text))
+    logger.info("llm[answer] output raw={}", _log_payload_text(raw_text))
     parsed = _extract_json_payload(raw_text)
     if not parsed:
         logger.info("llm[answer] parse_result=raw_text_fallback")
@@ -101,7 +99,7 @@ async def generate_answer_from_chunks(
         key_points = [str(item).strip() for item in key_points_raw if str(item).strip()]
     else:
         key_points = []
-    logger.info("llm[answer] parse_result=json key_points=%d", len(key_points))
+    logger.info("llm[answer] parse_result=json key_points={}", len(key_points))
     return conclusion, key_points, settings.deepseek_model
 
 
@@ -141,7 +139,7 @@ async def generate_hybrid_answer(
         ),
     ]
     logger.info(
-        "llm[hybrid][%s] input intent=%s query=%s evidence_count=%d facts=%s model=%s",
+        "llm[hybrid][{}] input intent={} query={} evidence_count={} facts={} model={}",
         request_id,
         intent,
         query[:200],
@@ -150,16 +148,16 @@ async def generate_hybrid_answer(
         settings.deepseek_model,
     )
     logger.info(
-        "llm[hybrid][%s] input_prompt=%s",
+        "llm[hybrid][{}] input_prompt={}",
         request_id,
         _log_payload_text(messages[1].content),
     )
     result = await llm.ainvoke(messages)
     raw_text = str(result.content)
-    logger.info("llm[hybrid][%s] output raw=%s", request_id, _log_payload_text(raw_text))
+    logger.info("llm[hybrid][{}] output raw={}", request_id, _log_payload_text(raw_text))
     parsed = _extract_json_payload(raw_text)
     if not parsed:
-        logger.info("llm[hybrid][%s] parse_result=raw_text_fallback", request_id)
+        logger.info("llm[hybrid][{}] parse_result=raw_text_fallback", request_id)
         return raw_text.strip(), [], settings.deepseek_model
 
     conclusion = str(parsed.get("conclusion", "")).strip() or "未生成结论"
@@ -168,5 +166,5 @@ async def generate_hybrid_answer(
         key_points = [str(item).strip() for item in key_points_raw if str(item).strip()]
     else:
         key_points = []
-    logger.info("llm[hybrid][%s] parse_result=json key_points=%d", request_id, len(key_points))
+    logger.info("llm[hybrid][{}] parse_result=json key_points={}", request_id, len(key_points))
     return conclusion, key_points, settings.deepseek_model

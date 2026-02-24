@@ -53,6 +53,12 @@ uvicorn agent_parksuite_biz_api.main:app --reload --port 8001
 uvicorn agent_parksuite_rag_core.main:app --reload --port 8002
 ```
 
+## Logging And Trace
+- Both modules use `Loguru + contextvars`, default output to console.
+- Incoming request headers:
+  - `X-Trace-Id` (optional; auto-generated if missing)
+- `rag-core` -> `biz-api` httpx calls will propagate `X-Trace-Id` for cross-service tracing.
+
 ## DB Migrations (Alembic)
 ```bash
 # Biz DB

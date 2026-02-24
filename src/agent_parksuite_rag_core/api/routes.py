@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import logging
 import re
 import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from loguru import logger
 from sqlalchemy import and_, delete, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,7 +30,6 @@ from agent_parksuite_rag_core.services.answering import generate_answer_from_chu
 from agent_parksuite_rag_core.services.hybrid_answering import run_hybrid_answering
 
 router = APIRouter(prefix="/api/v1", tags=["rag-core"])
-logger = logging.getLogger(__name__)
 
 
 def _utcnow() -> datetime:
@@ -314,7 +313,7 @@ async def answer_hybrid(
 ) -> HybridAnswerResponse:
     request_id = uuid.uuid4().hex[:8]
     logger.info(
-        "hybrid[%s] request received top_k=%d hint=%s source_ids=%d",
+        "hybrid[{}] request received top_k={} hint={} source_ids={}",
         request_id,
         payload.top_k,
         payload.intent_hint,
@@ -335,13 +334,13 @@ async def answer_hybrid(
             include_inactive=hybrid_payload.include_inactive,
         )
         items = await _retrieve_items(retrieve_payload, session)
-        logger.info("hybrid[%s] retrieve done count=%d", request_id, len(items))
+        logger.info("hybrid[{}] retrieve done count={}", request_id, len(items))
         return items
 
     try:
         result = await run_hybrid_answering(payload=payload, retrieve_fn=_hybrid_retrieve, request_id=request_id)
     except RuntimeError as exc:
-        logger.exception("hybrid[%s] failed with runtime error", request_id)
+        logger.exception("hybrid[{}] failed with runtime error", request_id)
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     items = result.get("retrieved_items", [])
@@ -367,7 +366,7 @@ async def answer_hybrid(
         graph_trace=list(result.get("trace", [])),
     )
     logger.info(
-        "hybrid[%s] response ready intent=%s retrieved_count=%d trace=%s",
+        "hybrid[{}] response ready intent={} retrieved_count={} trace={}",
         request_id,
         response.intent,
         response.retrieved_count,

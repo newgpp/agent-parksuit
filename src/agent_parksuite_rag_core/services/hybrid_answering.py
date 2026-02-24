@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import logging
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Awaitable, Callable
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
+from loguru import logger
 
 from agent_parksuite_rag_core.config import settings
 from agent_parksuite_rag_core.schemas.rag import HybridAnswerRequest, RetrieveResponseItem
@@ -15,7 +15,6 @@ from agent_parksuite_rag_core.services.biz_tools import BizApiClient
 from agent_parksuite_rag_core.workflows.hybrid_answer import HybridGraphState, run_hybrid_workflow
 
 RetrieveFn = Callable[[HybridAnswerRequest], Awaitable[list[RetrieveResponseItem]]]
-logger = logging.getLogger(__name__)
 
 
 def _log_payload_text(text: str) -> str:
@@ -42,12 +41,12 @@ def _rule_route_intent(payload: HybridAnswerRequest) -> str:
 
 async def _classify_intent(payload: HybridAnswerRequest, request_id: str = "") -> str:
     if payload.intent_hint in {"rule_explain", "arrears_check", "fee_verify"}:
-        logger.info("hybrid[%s] classify source=intent_hint intent=%s", request_id, payload.intent_hint)
+        logger.info("hybrid[{}] classify source=intent_hint intent={}", request_id, payload.intent_hint)
         return payload.intent_hint
 
     if not settings.deepseek_api_key:
         intent = _rule_route_intent(payload)
-        logger.info("hybrid[%s] classify source=rule_fallback reason=no_api_key intent=%s", request_id, intent)
+        logger.info("hybrid[{}] classify source=rule_fallback reason=no_api_key intent={}", request_id, intent)
         return intent
 
     llm = ChatOpenAI(
@@ -76,15 +75,15 @@ async def _classify_intent(payload: HybridAnswerRequest, request_id: str = "") -
             )
         ),
     ]
-    logger.info("llm[intent][%s] input query=%s", request_id, payload.query[:200])
-    logger.info("llm[intent][%s] input_prompt=%s", request_id, _log_payload_text(messages[1].content))
+    logger.info("llm[intent][{}] input query={}", request_id, payload.query[:200])
+    logger.info("llm[intent][{}] input_prompt={}", request_id, _log_payload_text(messages[1].content))
 
     try:
         result = await llm.ainvoke(messages)
     except Exception as exc:
         intent = _rule_route_intent(payload)
         logger.warning(
-            "hybrid[%s] classify source=rule_fallback reason=llm_error intent=%s error=%s",
+            "hybrid[{}] classify source=rule_fallback reason=llm_error intent={} error={}",
             request_id,
             intent,
             exc.__class__.__name__,
@@ -92,15 +91,15 @@ async def _classify_intent(payload: HybridAnswerRequest, request_id: str = "") -
         return intent
 
     raw_text = str(result.content)
-    logger.info("llm[intent][%s] output raw=%s", request_id, _log_payload_text(raw_text))
+    logger.info("llm[intent][{}] output raw={}", request_id, _log_payload_text(raw_text))
     parsed = _extract_json_payload(raw_text)
     intent = str((parsed or {}).get("intent", "")).strip()
     if intent in {"rule_explain", "arrears_check", "fee_verify"}:
-        logger.info("hybrid[%s] classify source=llm intent=%s", request_id, intent)
+        logger.info("hybrid[{}] classify source=llm intent={}", request_id, intent)
         return intent
     fallback_intent = _rule_route_intent(payload)
     logger.info(
-        "hybrid[%s] classify source=rule_fallback reason=invalid_output intent=%s",
+        "hybrid[{}] classify source=rule_fallback reason=invalid_output intent={}",
         request_id,
         fallback_intent,
     )
@@ -108,9 +107,9 @@ async def _classify_intent(payload: HybridAnswerRequest, request_id: str = "") -
 
 
 async def _build_arrears_facts(payload: HybridAnswerRequest, biz_client: BizApiClient) -> dict[str, Any]:
-    logger.info("hybrid biz_tool=arrears_orders start plate_no=%s city_code=%s", payload.plate_no, payload.city_code)
+    logger.info("hybrid biz_tool=arrears_orders start plate_no={} city_code={}", payload.plate_no, payload.city_code)
     rows = await biz_client.get_arrears_orders(plate_no=payload.plate_no, city_code=payload.city_code)
-    logger.info("hybrid biz_tool=arrears_orders done count=%d", len(rows))
+    logger.info("hybrid biz_tool=arrears_orders done count={}", len(rows))
     return {
         "intent": "arrears_check",
         "plate_no": payload.plate_no,
@@ -126,25 +125,25 @@ async def _build_fee_verify_facts(payload: HybridAnswerRequest, biz_client: BizA
         logger.info("hybrid biz_tool=fee_verify skip reason=missing_order_no")
         return {"intent": "fee_verify", "error": "order_no is required for fee_verify"}
 
-    logger.info("hybrid biz_tool=fee_verify start order_no=%s", payload.order_no)
+    logger.info("hybrid biz_tool=fee_verify start order_no={}", payload.order_no)
     order = await biz_client.get_parking_order(order_no=payload.order_no)
     rule_code = payload.rule_code or str(order.get("billing_rule_code", ""))
 
     try:
         entry_time = payload.entry_time or datetime.fromisoformat(str(order.get("entry_time")))
     except Exception:
-        logger.warning("hybrid biz_tool=fee_verify invalid_entry_time order_no=%s", payload.order_no)
+        logger.warning("hybrid biz_tool=fee_verify invalid_entry_time order_no={}", payload.order_no)
         return {"intent": "fee_verify", "error": "entry_time is invalid for fee_verify"}
 
     exit_raw = payload.exit_time or order.get("exit_time")
     if exit_raw is None:
-        logger.warning("hybrid biz_tool=fee_verify missing_exit_time order_no=%s", payload.order_no)
+        logger.warning("hybrid biz_tool=fee_verify missing_exit_time order_no={}", payload.order_no)
         return {"intent": "fee_verify", "error": "exit_time is required for fee_verify"}
 
     try:
         exit_time = exit_raw if isinstance(exit_raw, datetime) else datetime.fromisoformat(str(exit_raw))
     except Exception:
-        logger.warning("hybrid biz_tool=fee_verify invalid_exit_time order_no=%s", payload.order_no)
+        logger.warning("hybrid biz_tool=fee_verify invalid_exit_time order_no={}", payload.order_no)
         return {"intent": "fee_verify", "error": "exit_time is invalid for fee_verify"}
 
     sim = await biz_client.simulate_billing(rule_code=rule_code, entry_time=entry_time, exit_time=exit_time)
@@ -152,7 +151,7 @@ async def _build_fee_verify_facts(payload: HybridAnswerRequest, biz_client: BizA
     sim_total = _normalize_decimal_str(sim.get("total_amount", "0"))
     is_consistent = order_total == sim_total
     logger.info(
-        "hybrid biz_tool=fee_verify done order_no=%s amount_check_result=%s",
+        "hybrid biz_tool=fee_verify done order_no={} amount_check_result={}",
         payload.order_no,
         "一致" if is_consistent else "不一致",
     )
@@ -177,7 +176,7 @@ async def run_hybrid_answering(
     request_id: str = "",
 ) -> HybridGraphState:
     logger.info(
-        "hybrid[%s] start query_len=%d top_k=%d hint=%s city_code=%s lot_code=%s",
+        "hybrid[{}] start query_len={} top_k={} hint={} city_code={} lot_code={}",
         request_id,
         len(payload.query),
         payload.top_k,

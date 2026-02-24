@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import logging
 from typing import Any, Awaitable, Callable, TypedDict
 
 from langgraph.graph import END, StateGraph
+from loguru import logger
 
 from agent_parksuite_rag_core.schemas.rag import HybridAnswerRequest, RetrieveResponseItem
 
@@ -12,7 +12,6 @@ ClassifyFn = Callable[[HybridAnswerRequest], Awaitable[str]]
 ArrearsFactsFn = Callable[[HybridAnswerRequest], Awaitable[dict[str, Any]]]
 FeeFactsFn = Callable[[HybridAnswerRequest], Awaitable[dict[str, Any]]]
 SynthesizeFn = Callable[[str, list[RetrieveResponseItem], dict[str, Any], str], Awaitable[tuple[str, list[str], str]]]
-logger = logging.getLogger(__name__)
 
 
 class HybridGraphState(TypedDict, total=False):
@@ -36,9 +35,9 @@ async def run_hybrid_workflow(
     request_id: str = "",
 ) -> HybridGraphState:
     async def _node_intent_classifier(state: HybridGraphState) -> HybridGraphState:
-        logger.info("hybrid[%s] node=intent_classifier start", request_id)
+        logger.info("hybrid[{}] node=intent_classifier start", request_id)
         intent = await classify_fn(state["payload"])
-        logger.info("hybrid[%s] node=intent_classifier intent=%s", request_id, intent)
+        logger.info("hybrid[{}] node=intent_classifier intent={}", request_id, intent)
         return {
             "intent": intent,
             "trace": [*state.get("trace", []), f"intent_classifier:{intent}"],
@@ -53,17 +52,17 @@ async def run_hybrid_workflow(
         return "rule_explain_flow"
 
     async def _node_rule_explain_flow(state: HybridGraphState) -> HybridGraphState:
-        logger.info("hybrid[%s] node=rule_explain_flow", request_id)
+        logger.info("hybrid[{}] node=rule_explain_flow", request_id)
         return {
             "business_facts": {"intent": "rule_explain", "note": "RAG-only explanation flow"},
             "trace": [*state.get("trace", []), "rule_explain_flow"],
         }
 
     async def _node_arrears_check_flow(state: HybridGraphState) -> HybridGraphState:
-        logger.info("hybrid[%s] node=arrears_check_flow start", request_id)
+        logger.info("hybrid[{}] node=arrears_check_flow start", request_id)
         facts = await arrears_facts_fn(state["payload"])
         logger.info(
-            "hybrid[%s] node=arrears_check_flow arrears_count=%s",
+            "hybrid[{}] node=arrears_check_flow arrears_count={}",
             request_id,
             facts.get("arrears_count"),
         )
@@ -73,10 +72,10 @@ async def run_hybrid_workflow(
         }
 
     async def _node_fee_verify_flow(state: HybridGraphState) -> HybridGraphState:
-        logger.info("hybrid[%s] node=fee_verify_flow start", request_id)
+        logger.info("hybrid[{}] node=fee_verify_flow start", request_id)
         facts = await fee_facts_fn(state["payload"])
         logger.info(
-            "hybrid[%s] node=fee_verify_flow amount_check_result=%s error=%s",
+            "hybrid[{}] node=fee_verify_flow amount_check_result={} error={}",
             request_id,
             facts.get("amount_check_result"),
             facts.get("error"),
@@ -87,9 +86,9 @@ async def run_hybrid_workflow(
         }
 
     async def _node_rag_retrieve(state: HybridGraphState) -> HybridGraphState:
-        logger.info("hybrid[%s] node=rag_retrieve start", request_id)
+        logger.info("hybrid[{}] node=rag_retrieve start", request_id)
         items = await retrieve_fn(state["payload"])
-        logger.info("hybrid[%s] node=rag_retrieve retrieved_count=%d", request_id, len(items))
+        logger.info("hybrid[{}] node=rag_retrieve retrieved_count={}", request_id, len(items))
         return {
             "retrieved_items": items,
             "trace": [*state.get("trace", []), f"rag_retrieve:{len(items)}"],
@@ -100,7 +99,7 @@ async def run_hybrid_workflow(
         facts = state.get("business_facts", {})
         intent = state.get("intent", "rule_explain")
         logger.info(
-            "hybrid[%s] node=answer_synthesizer start intent=%s retrieved_count=%d facts_keys=%s",
+            "hybrid[{}] node=answer_synthesizer start intent={} retrieved_count={} facts_keys={}",
             request_id,
             intent,
             len(items),
@@ -108,7 +107,7 @@ async def run_hybrid_workflow(
         )
 
         if not items and not facts:
-            logger.info("hybrid[%s] node=answer_synthesizer no_data", request_id)
+            logger.info("hybrid[{}] node=answer_synthesizer no_data", request_id)
             return {
                 "conclusion": "未检索到可用证据，暂时无法回答该问题。",
                 "key_points": [],
@@ -123,7 +122,7 @@ async def run_hybrid_workflow(
             intent,
         )
         logger.info(
-            "hybrid[%s] node=answer_synthesizer done model=%s key_points=%d",
+            "hybrid[{}] node=answer_synthesizer done model={} key_points={}",
             request_id,
             model_used,
             len(key_points),

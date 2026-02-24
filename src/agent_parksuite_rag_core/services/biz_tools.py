@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime
-import logging
 from typing import Any
 
 import httpx
+from loguru import logger
 
-logger = logging.getLogger(__name__)
+from agent_parksuite_common.observability import current_trace_headers
 
 
 class BizApiClient:
@@ -21,11 +21,12 @@ class BizApiClient:
         if city_code:
             params["city_code"] = city_code
         url = f"{self.base_url}/api/v1/arrears-orders"
-        logger.info("tool[biz_api] request method=GET url=%s params=%s", url, params)
+        headers = current_trace_headers()
+        logger.info("tool[biz_api] request method=GET url={} params={} headers={}", url, params, headers)
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            resp = await client.get(url, params=params)
+            resp = await client.get(url, params=params, headers=headers)
             logger.info(
-                "tool[biz_api] response method=GET url=%s status=%d body=%s",
+                "tool[biz_api] response method=GET url={} status={} body={}",
                 url,
                 resp.status_code,
                 resp.text,
@@ -36,11 +37,12 @@ class BizApiClient:
 
     async def get_parking_order(self, order_no: str) -> dict[str, Any]:
         url = f"{self.base_url}/api/v1/parking-orders/{order_no}"
-        logger.info("tool[biz_api] request method=GET url=%s", url)
+        headers = current_trace_headers()
+        logger.info("tool[biz_api] request method=GET url={} headers={}", url, headers)
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            resp = await client.get(url)
+            resp = await client.get(url, headers=headers)
             logger.info(
-                "tool[biz_api] response method=GET url=%s status=%d body=%s",
+                "tool[biz_api] response method=GET url={} status={} body={}",
                 url,
                 resp.status_code,
                 resp.text,
@@ -56,11 +58,12 @@ class BizApiClient:
             "exit_time": exit_time.isoformat(),
         }
         url = f"{self.base_url}/api/v1/billing-rules/simulate"
-        logger.info("tool[biz_api] request method=POST url=%s json=%s", url, payload)
+        headers = current_trace_headers()
+        logger.info("tool[biz_api] request method=POST url={} json={} headers={}", url, payload, headers)
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            resp = await client.post(url, json=payload)
+            resp = await client.post(url, json=payload, headers=headers)
             logger.info(
-                "tool[biz_api] response method=POST url=%s status=%d body=%s",
+                "tool[biz_api] response method=POST url={} status={} body={}",
                 url,
                 resp.status_code,
                 resp.text,

@@ -4,6 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from loguru import logger
 from sqlalchemy import Select, and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,6 +59,7 @@ async def upsert_billing_rule(
     db: AsyncSession = Depends(get_db_session),
 ) -> BillingRule:
     """计费规则配置接口。"""
+    logger.info("upsert_billing_rule.request payload={}", payload.model_dump(mode="json"))
     stmt = select(BillingRule).where(BillingRule.rule_code == payload.rule_code)
     existing_rule = (await db.execute(stmt)).scalar_one_or_none()
 
@@ -88,6 +90,11 @@ async def upsert_billing_rule(
             payload.version.effective_from,
             payload.version.effective_to,
         ):
+            logger.warning(
+                "upsert_billing_rule.conflict rule_code={} conflict_version_no={}",
+                payload.rule_code,
+                item.version_no,
+            )
             raise HTTPException(
                 status_code=409,
                 detail=(
@@ -115,6 +122,12 @@ async def upsert_billing_rule(
         )
     ).scalar_one()
     await db.refresh(refreshed, attribute_names=["versions"])
+    logger.info(
+        "upsert_billing_rule.response rule_code={} version_count={} latest_version_no={}",
+        refreshed.rule_code,
+        len(refreshed.versions),
+        max((item.version_no for item in refreshed.versions), default=None),
+    )
     return refreshed
 
 
@@ -130,6 +143,7 @@ async def list_billing_rules(
     db: AsyncSession = Depends(get_db_session),
 ) -> list[BillingRule]:
     """计费规则列表查询接口。"""
+    logger.info("list_billing_rules.request city_code={} lot_code={}", city_code, lot_code)
     stmt: Select[tuple[BillingRule]] = select(BillingRule)
 
     filters = []
@@ -145,6 +159,7 @@ async def list_billing_rules(
     rules = list((await db.execute(stmt.order_by(BillingRule.id.desc()))).scalars().all())
     for item in rules:
         await db.refresh(item, attribute_names=["versions"])
+    logger.info("list_billing_rules.response count={}", len(rules))
     return rules
 
 
@@ -159,11 +174,14 @@ async def get_billing_rule(
     db: AsyncSession = Depends(get_db_session),
 ) -> BillingRule:
     """计费规则详情查询接口。"""
+    logger.info("get_billing_rule.request rule_code={}", rule_code)
     rule = (await db.execute(select(BillingRule).where(BillingRule.rule_code == rule_code))).scalar_one_or_none()
     if not rule:
+        logger.warning("get_billing_rule.not_found rule_code={}", rule_code)
         raise HTTPException(status_code=404, detail="Billing rule not found")
 
     await db.refresh(rule, attribute_names=["versions"])
+    logger.info("get_billing_rule.response rule_code={} version_count={}", rule.rule_code, len(rule.versions))
     return rule
 
 
@@ -178,13 +196,20 @@ async def simulate_billing(
     db: AsyncSession = Depends(get_db_session),
 ) -> BillingSimulateResponse:
     """计费模拟接口。"""
+    logger.info("simulate_billing.request payload={}", payload.model_dump(mode="json"))
     rule = (await db.execute(select(BillingRule).where(BillingRule.rule_code == payload.rule_code))).scalar_one_or_none()
     if not rule:
+        logger.warning("simulate_billing.rule_not_found rule_code={}", payload.rule_code)
         raise HTTPException(status_code=404, detail="Billing rule not found")
 
     await db.refresh(rule, attribute_names=["versions"])
     matched_version = _pick_version(list(rule.versions), payload.entry_time)
     if not matched_version:
+        logger.warning(
+            "simulate_billing.no_active_version rule_code={} entry_time={}",
+            payload.rule_code,
+            payload.entry_time.isoformat(),
+        )
         raise HTTPException(status_code=404, detail="No active version for entry_time")
 
     result = simulate_fee(
@@ -193,7 +218,15 @@ async def simulate_billing(
         payload.exit_time,
         business_timezone=settings.business_timezone,
     )
-    return BillingSimulateResponse(**result, matched_version_no=matched_version.version_no)
+    response = BillingSimulateResponse(**result, matched_version_no=matched_version.version_no)
+    logger.info(
+        "simulate_billing.response rule_code={} matched_version_no={} total_amount={} segment_count={}",
+        payload.rule_code,
+        response.matched_version_no,
+        str(response.total_amount),
+        len(response.breakdown),
+    )
+    return response
 
 
 @router.post(
@@ -207,11 +240,20 @@ async def create_parking_order(
     db: AsyncSession = Depends(get_db_session),
 ) -> ParkingOrder:
     """停车订单创建接口。"""
+    logger.info("create_parking_order.request payload={}", payload.model_dump(mode="json"))
     arrears_amount = max(Decimal("0.00"), payload.total_amount - payload.paid_amount)
     order = ParkingOrder(**payload.model_dump(), arrears_amount=arrears_amount)
     db.add(order)
     await db.commit()
     await db.refresh(order)
+    logger.info(
+        "create_parking_order.response order_no={} total_amount={} paid_amount={} arrears_amount={} status={}",
+        order.order_no,
+        str(order.total_amount),
+        str(order.paid_amount),
+        str(order.arrears_amount),
+        order.status,
+    )
     return order
 
 
@@ -226,9 +268,19 @@ async def get_parking_order(
     db: AsyncSession = Depends(get_db_session),
 ) -> ParkingOrder:
     """停车订单详情查询接口。"""
+    logger.info("get_parking_order.request order_no={}", order_no)
     order = (await db.execute(select(ParkingOrder).where(ParkingOrder.order_no == order_no))).scalar_one_or_none()
     if not order:
+        logger.warning("get_parking_order.not_found order_no={}", order_no)
         raise HTTPException(status_code=404, detail="Order not found")
+    logger.info(
+        "get_parking_order.response order_no={} total_amount={} paid_amount={} arrears_amount={} status={}",
+        order.order_no,
+        str(order.total_amount),
+        str(order.paid_amount),
+        str(order.arrears_amount),
+        order.status,
+    )
     return order
 
 
@@ -244,6 +296,7 @@ async def list_arrears_orders(
     db: AsyncSession = Depends(get_db_session),
 ) -> list[ParkingOrder]:
     """欠费订单列表查询接口。"""
+    logger.info("list_arrears_orders.request plate_no={} city_code={}", plate_no, city_code)
     stmt: Select[tuple[ParkingOrder]] = select(ParkingOrder).where(ParkingOrder.arrears_amount > 0)
 
     if plate_no:
@@ -251,4 +304,6 @@ async def list_arrears_orders(
     if city_code:
         stmt = stmt.where(ParkingOrder.city_code == city_code)
 
-    return list((await db.execute(stmt.order_by(ParkingOrder.id.desc()))).scalars().all())
+    rows = list((await db.execute(stmt.order_by(ParkingOrder.id.desc()))).scalars().all())
+    logger.info("list_arrears_orders.response count={}", len(rows))
+    return rows
