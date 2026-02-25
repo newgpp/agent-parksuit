@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     deepseek_model: str = "deepseek-chat"
     llm_log_full_payload: bool = False
     llm_log_max_chars: int = 1000
+    log_to_file: bool = False
+    log_dir: str = "logs"
     biz_api_base_url: str = "http://127.0.0.1:8001"
     biz_api_timeout_seconds: float = 10.0
 

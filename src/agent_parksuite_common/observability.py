@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import sys
 from contextvars import ContextVar, Token
+from datetime import datetime
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi import Request
@@ -14,7 +16,7 @@ TRACE_ID_HEADER = "X-Trace-Id"
 trace_id_ctx: ContextVar[str] = ContextVar("trace_id", default="-")
 
 
-def setup_loguru(service_name: str) -> None:
+def setup_loguru(service_name: str, log_to_file: bool = False, log_dir: str = "logs") -> None:
     logger.remove()
     logger.configure(
         extra={"service": service_name},
@@ -35,6 +37,23 @@ def setup_loguru(service_name: str) -> None:
             "| trace_id={extra[trace_id]} | {message}"
         ),
     )
+
+    if log_to_file:
+        Path(log_dir).mkdir(parents=True, exist_ok=True)
+        date_suffix = datetime.now().strftime("%Y-%m-%d")
+        file_path = Path(log_dir) / f"{service_name}.{date_suffix}.log"
+        logger.add(
+            str(file_path),
+            level="INFO",
+            enqueue=True,
+            backtrace=False,
+            diagnose=False,
+            encoding="utf-8",
+            format=(
+                "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level} | {extra[service]} "
+                "| trace_id={extra[trace_id]} | {message}"
+            ),
+        )
 
 
 def current_trace_headers() -> dict[str, str]:

@@ -4,7 +4,11 @@ from agent_parksuite_common.observability import TraceContextMiddleware, setup_l
 from agent_parksuite_biz_api.api.routes import router as biz_router
 from agent_parksuite_biz_api.config import settings
 
-setup_loguru(settings.app_name)
+setup_loguru(
+    settings.app_name,
+    log_to_file=settings.log_to_file,
+    log_dir=settings.log_dir,
+)
 
 app = FastAPI(title=settings.app_name)
 app.add_middleware(TraceContextMiddleware)
