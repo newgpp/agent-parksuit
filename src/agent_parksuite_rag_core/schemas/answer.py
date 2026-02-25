@@ -37,6 +37,8 @@ class AnswerResponse(BaseModel):
 
 
 class HybridAnswerRequest(BaseModel):
+    session_id: str | None = Field(default=None, description="会话ID（多轮短期记忆）")
+    turn_id: str | None = Field(default=None, description="当前轮次ID（可选，缺省由服务端生成）")
     query: str = Field(min_length=1, description="用户提问文本")
     intent_hint: str | None = Field(default=None, description="可选意图提示：rule_explain/arrears_check/fee_verify")
     query_embedding: list[float] | None = Field(default=None, description="查询向量（可选）")
@@ -56,6 +58,9 @@ class HybridAnswerRequest(BaseModel):
 
 
 class HybridAnswerResponse(BaseModel):
+    session_id: str | None = Field(default=None, description="会话ID")
+    turn_id: str = Field(description="本次回答对应轮次ID")
+    memory_ttl_seconds: int = Field(description="短期记忆TTL（秒）")
     intent: str = Field(description="命中的意图类型")
     conclusion: str = Field(description="最终结论")
     key_points: list[str] = Field(default_factory=list, description="要点列表")
@@ -64,4 +69,3 @@ class HybridAnswerResponse(BaseModel):
     retrieved_count: int = Field(description="参与回答的检索条数")
     model: str = Field(description="回答使用的模型标识")
     graph_trace: list[str] = Field(default_factory=list, description="图执行节点轨迹")
-

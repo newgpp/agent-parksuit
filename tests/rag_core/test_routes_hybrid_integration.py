@@ -127,6 +127,8 @@ async def test_hybrid_answer_fee_verify_should_combine_tool_facts_and_rag(
     resp = await rag_async_client.post(
         "/api/v1/answer/hybrid",
         json={
+            "session_id": "ses-hybrid-001",
+            "turn_id": "turn-hybrid-001",
             "query": scn_020["query"],
             "intent_hint": "fee_verify",
             "top_k": 3,
@@ -140,6 +142,9 @@ async def test_hybrid_answer_fee_verify_should_combine_tool_facts_and_rag(
     )
     assert resp.status_code == 200
     body = resp.json()
+    assert body["session_id"] == "ses-hybrid-001"
+    assert body["turn_id"] == "turn-hybrid-001"
+    assert body["memory_ttl_seconds"] > 0
     assert body["intent"] == "fee_verify"
     assert body["conclusion"].startswith("结论：订单金额与模拟金额不一致")
     assert body["business_facts"]["amount_check_result"] == "不一致"
@@ -213,6 +218,7 @@ async def test_hybrid_answer_arrears_check_should_call_biz_tool(
     resp = await rag_async_client.post(
         "/api/v1/answer/hybrid",
         json={
+            "session_id": "ses-hybrid-002",
             "query": scn_009["query"],
             "intent_hint": "arrears_check",
             "top_k": 3,
@@ -226,6 +232,9 @@ async def test_hybrid_answer_arrears_check_should_call_biz_tool(
     )
     assert resp.status_code == 200
     body = resp.json()
+    assert body["session_id"] == "ses-hybrid-002"
+    assert body["turn_id"].startswith("turn-")
+    assert body["memory_ttl_seconds"] > 0
     assert body["intent"] == "arrears_check"
     assert body["business_facts"]["arrears_count"] == len(arrears_orders)
     assert body["retrieved_count"] == 0

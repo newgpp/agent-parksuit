@@ -99,7 +99,9 @@ async def run_hybrid_answering(
     retrieve_fn: RetrieveFn,
 ) -> HybridGraphState:
     logger.info(
-        "hybrid start query_len={} top_k={} hint={} city_code={} lot_code={}",
+        "hybrid start session_id={} turn_id={} query_len={} top_k={} hint={} city_code={} lot_code={}",
+        payload.session_id,
+        payload.turn_id,
         len(payload.query),
         payload.top_k,
         payload.intent_hint,

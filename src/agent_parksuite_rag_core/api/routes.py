@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
+from uuid import uuid4
 
 from agent_parksuite_rag_core.config import settings
 from agent_parksuite_rag_core.db.session import get_db_session
@@ -160,8 +161,11 @@ async def answer_hybrid(
     session: AsyncSession = Depends(get_db_session),
 ) -> HybridAnswerResponse:
     repo = KnowledgeRepository(session=session, embedding_dim=settings.embedding_dim)
+    turn_id = (payload.turn_id or "").strip() or f"turn-{uuid4().hex[:12]}"
     logger.info(
-        "hybrid request received top_k={} hint={} source_ids={}",
+        "hybrid request received session_id={} turn_id={} top_k={} hint={} source_ids={}",
+        payload.session_id,
+        turn_id,
         payload.top_k,
         payload.intent_hint,
         len(payload.source_ids or []),
@@ -195,6 +199,9 @@ async def answer_hybrid(
         for item in items
     ]
     response = HybridAnswerResponse(
+        session_id=payload.session_id,
+        turn_id=turn_id,
+        memory_ttl_seconds=settings.memory_ttl_seconds,
         intent=str(result.get("intent", "")),
         conclusion=str(result.get("conclusion", "")),
         key_points=list(result.get("key_points", [])),
@@ -205,7 +212,9 @@ async def answer_hybrid(
         graph_trace=list(result.get("trace", [])),
     )
     logger.info(
-        "hybrid response ready intent={} retrieved_count={} trace={}",
+        "hybrid response ready session_id={} turn_id={} intent={} retrieved_count={} trace={}",
+        response.session_id,
+        response.turn_id,
         response.intent,
         response.retrieved_count,
         response.graph_trace,

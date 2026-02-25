@@ -467,13 +467,13 @@
   - only short-term memory (recent turns + extracted slots)
   - no long-term profile memory and no cross-session recall
 - PR split:
-  - PR-1 (current): acceptance dataset and scenario definition
+  - PR-1 (done): acceptance dataset and scenario definition
     - deliver `data/rag009/memory_acceptance_cases.jsonl`
     - cover core multi-turn chains:
       - arrears list -> dispute one order amount
       - missing parameter -> follow-up补参
       - referential follow-up (`第一笔` / `上一单`)
-  - PR-2: API/session contract
+  - PR-2 (current): API/session contract
     - add `session_id` and optional `turn_id` to hybrid request/response schema
     - define turn persistence model and memory TTL
   - PR-3: workflow integration
@@ -486,6 +486,17 @@
   - turn-2/turn-3 can resolve omitted fields from prior turns in same session
   - follow-up referential query can map to deterministic `order_no`
   - response includes memory trace for auditable slot来源
+- Implemented in PR-2 (current):
+  - schemas:
+    - `HybridAnswerRequest`: `session_id`/`turn_id` added
+    - `HybridAnswerResponse`: `session_id`/`turn_id`/`memory_ttl_seconds` added
+  - route behavior:
+    - `/api/v1/answer/hybrid` generates `turn_id` when absent
+    - response echoes `session_id`, includes generated/provided `turn_id`
+  - config:
+    - `RAG_MEMORY_TTL_SECONDS` / `RAG_MEMORY_MAX_TURNS`
+  - tests:
+    - `tests/rag_core/test_routes_hybrid_integration.py` asserts session contract fields
 
 ## Open items
 - Define and document `rule_payload` schema contract more strictly (JSON Schema / Pydantic typed segments)

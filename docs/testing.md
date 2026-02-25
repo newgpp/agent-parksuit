@@ -62,11 +62,26 @@ python scripts/rag000_seed_biz_scenarios.py \
   --export-jsonl data/rag000/scenarios.jsonl
 ```
 
-To keep test data/tables for debugging:
+RAG-009 PR-2 session contract integration check (`session_id/turn_id/memory_ttl_seconds`):
 ```bash
-export KEEP_TEST_DATA=1
-pytest tests/biz_api/test_routes_billing_integration.py tests/biz_api/test_routes_orders_integration.py
+# prepare test db (one-time if not exists)
+docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_rag_test;"
+
+export RAG_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag_test
+export RAG_DATABASE_URL=$RAG_TEST_DATABASE_URL
+
+# ensure schema is ready
+alembic upgrade head
+
+pytest tests/rag_core/test_routes_hybrid_integration.py -k "hybrid_answer"
 ```
+说明：
+- 本阶段只验收会话契约字段回传：
+  - 传入 `session_id` 后响应应回传相同值。
+  - 传入 `turn_id` 后响应应回传相同值。
+  - 未传 `turn_id` 时响应应自动生成（通常前缀 `turn-`）。
+  - 响应包含 `memory_ttl_seconds > 0`。
+- 多轮自动继承（短期记忆读写）属于 RAG-009 PR-3，不在本步骤验收。
 
 ## Manual E2E Tests (Real LLM)
 完整步骤与示例请求见：
