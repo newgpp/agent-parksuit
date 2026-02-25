@@ -1,21 +1,80 @@
 # agent-parksuit
 
-FastAPI modules:
-- `agent_parksuite_biz_api`: billing rules + parking order APIs
-- `agent_parksuite_rag_core`: RAG core skeleton backed by PostgreSQL + pgvector
+面向停车计费场景的 Agent 工程项目（FastAPI + PostgreSQL + pgvector），包含业务工具服务、RAG 服务、离线评测模块。
 
-## Requirements
+## Interview Highlights
+- Hybrid Agent 链路可落地：`RAG + biz tools + LLM`，已支持 `rule_explain / arrears_check / fee_verify` 三类真实场景。
+- 工程闭环完整：迁移、种子数据、入库、接口、集成测试、E2E、离线评测（`RAG-006`）。
+- 可观测性到位：`X-Trace-Id` 跨服务透传、结构化日志、`graph_trace` 可追踪执行分支。
+
+## System Architecture
+- `agent_parksuite_biz_api`:
+  - 计费规则配置与版本管理
+  - 停车订单与欠费查询
+  - 计费模拟
+- `agent_parksuite_rag_core`:
+  - 知识源/知识分块存储
+  - 检索与回答接口
+  - Hybrid 编排（LangGraph + biz tools）
+- `agent_parksuite_eval`:
+  - 评测数据集（RAG-006）
+  - 评测回放脚本与报告
+
+## Core API Capabilities
+
+### Biz API
+- `POST /api/v1/billing-rules` upsert billing rule
+- `GET /api/v1/billing-rules` list billing rules
+- `GET /api/v1/billing-rules/{rule_code}` billing rule detail
+- `POST /api/v1/billing-rules/simulate` simulate fee
+- `POST /api/v1/parking-orders` create parking order
+- `GET /api/v1/parking-orders/{order_no}` parking order detail
+- `GET /api/v1/arrears-orders` list arrears orders
+
+### RAG Core
+- `POST /api/v1/knowledge/sources` upsert knowledge source metadata
+- `POST /api/v1/knowledge/chunks/batch` batch ingest chunks for a source
+- `POST /api/v1/retrieve` retrieve chunks by metadata filters (optional vector ranking)
+- `POST /api/v1/answer` generate answer with conclusion/key points/citations (DeepSeek)
+- `POST /api/v1/answer/hybrid` hybrid answer (LangGraph + one-shot intent routing + biz tools + optional RAG evidence)
+
+### `/api/v1/answer/hybrid` Flow
+```mermaid
+flowchart TD
+    A[POST /api/v1/answer/hybrid] --> B[intent_classifier<br/>LLM classify + rule fallback]
+    B -->|rule_explain| C[rule_explain_flow]
+    B -->|arrears_check| D[arrears_check_flow]
+    B -->|fee_verify| E[fee_verify_flow]
+
+    C --> F[rag_retrieve]
+    E --> F
+    D --> G[answer_synthesizer]
+    F --> G
+    G --> H[HybridAnswerResponse]
+```
+
+## Eval Snapshot (RAG-006)
+当前离线评测基线（60 条）：
+- `retrieval_hit_rate`: `1.0`
+- `citation_coverage`: `1.0`
+- `tool_call_compliance_rate`: `1.0`
+- `answer_consistency_rate`: `1.0`
+- `empty_retrieval_rate`: `0.1`（主要来自负样本）
+
+## Quick Start
+
+### Requirements
 - Python 3.11+
 - PostgreSQL 15+ with `pgvector` extension
 
-## Install
+### Install
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .[dev]
 ```
 
-## Start PostgreSQL (Docker)
+### Start PostgreSQL (Docker)
 ```bash
 docker run -d --name parksuite-pg \
   -e POSTGRES_USER=postgres \
@@ -34,7 +93,7 @@ docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE pa
 docker exec -it parksuite-pg psql -U postgres -d parksuite_rag -c "CREATE EXTENSION IF NOT EXISTS vector;"
 ```
 
-## Environment
+### Environment
 Use `.env` (optional):
 ```env
 BIZ_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz
@@ -53,24 +112,13 @@ RAG_BIZ_API_BASE_URL=http://127.0.0.1:8001
 RAG_BIZ_API_TIMEOUT_SECONDS=10
 ```
 
-## Run APIs
+### Run APIs
 ```bash
 uvicorn agent_parksuite_biz_api.main:app --reload --port 8001
 uvicorn agent_parksuite_rag_core.main:app --reload --port 8002
 ```
 
-## Logging And Trace
-- Both modules use `Loguru + contextvars`, default output to console.
-- Optional file logging:
-  - stdout logging toggle: `BIZ_LOG_TO_STDOUT` / `RAG_LOG_TO_STDOUT` (default `true`)
-  - enable with `BIZ_LOG_TO_FILE=true` / `RAG_LOG_TO_FILE=true`
-  - default directory: `logs/`
-  - filename format: `{service_name}.YYYY-MM-DD.log`
-- Incoming request headers:
-  - `X-Trace-Id` (optional; auto-generated if missing)
-- `rag-core` -> `biz-api` httpx calls will propagate `X-Trace-Id` for cross-service tracing.
-
-## DB Migrations (Alembic)
+## Database Migration
 ```bash
 # Biz DB
 BIZ_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz alembic upgrade head
@@ -82,18 +130,6 @@ RAG_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite
 If you see `No module named 'greenlet'`, install dependencies again:
 ```bash
 pip install -e .[dev]
-```
-
-## Init Biz Tables
-推荐方式（使用 Alembic 初始化 `parksuite_biz`）：
-```bash
-BIZ_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz alembic upgrade head
-```
-
-## Init RAG Core Tables
-使用 Alembic 初始化 `parksuite_rag`（会创建 `knowledge_sources` / `knowledge_chunks`）：
-```bash
-RAG_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag alembic upgrade head
 ```
 
 ## Init RAG Test Dataset
@@ -148,71 +184,16 @@ WHERE br.rule_code LIKE 'SCN-%';
 SELECT COUNT(*) FROM parking_orders WHERE order_no LIKE 'SCN-%';
 ```
 
-## Biz API endpoints
-- `POST /api/v1/billing-rules` upsert billing rule
-- `GET /api/v1/billing-rules` list billing rules
-- `GET /api/v1/billing-rules/{rule_code}` billing rule detail
-- `POST /api/v1/billing-rules/simulate` simulate fee
-- `POST /api/v1/parking-orders` create parking order
-- `GET /api/v1/parking-orders/{order_no}` parking order detail
-- `GET /api/v1/arrears-orders` list arrears orders
-
-## RAG Core endpoints
-- `POST /api/v1/knowledge/sources` upsert knowledge source metadata
-- `POST /api/v1/knowledge/chunks/batch` batch ingest chunks for a source
-- `POST /api/v1/retrieve` retrieve chunks by metadata filters (optional vector ranking)
-- `POST /api/v1/answer` generate answer with conclusion/key points/citations (DeepSeek)
-- `POST /api/v1/answer/hybrid` hybrid answer (LangGraph + LLM intent routing + biz tools + RAG evidence)
-
-### `/api/v1/answer/hybrid` 逻辑分支图
-```mermaid
-flowchart TD
-    A[POST /api/v1/answer/hybrid] --> B[intent_classifier<br/>LLM classify + rule fallback]
-    B -->|rule_explain| C[rule_explain_flow]
-    B -->|arrears_check| D[arrears_check_flow]
-    B -->|fee_verify| E[fee_verify_flow]
-
-    C --> F[rag_retrieve]
-    E --> F
-    D --> G[answer_synthesizer]
-    F --> G
-    G --> H[HybridAnswerResponse]
-```
-
-### AI 术语对照（中英 + 发音）
-- `Agent`：智能体；发音：`/ˈeɪdʒənt/`
-- `LLM`：大语言模型；发音：`L-L-M`
-- `Large Language Model`：大语言模型；发音：`/lɑːdʒ ˈlæŋɡwɪdʒ ˈmɒdl/`
-- `Retrieve`：召回；发音：`/rɪˈtriːv/`
-- `Retrieval`：检索；发音：`/rɪˈtriːvl/`
-- `Augmented`：增强；发音：`/ɔːɡˈmentɪd/`
-- `Generation`：生成；发音：`/ˌdʒenəˈreɪʃn/`
-- `RAG`：检索增强生成；发音：`R-A-G` 或 `/ræɡ/`
-- `Vector`：向量；发音：`/ˈvektə(r)/`
-- `Embedding`：嵌入/词向量；发音：`/ɪmˈbedɪŋ/`
-- `Database`：数据库；发音：`/ˈdeɪtəbeɪs/`
-- `Tool Call`：工具调用；发音：`/tuːl kɔːl/`
-- `Prompt`：提示词；发音：`/prɒmpt/`
-- `Token`：令牌/词元；发音：`/ˈtəʊkən/`
-- `Inference`：推理；发音：`/ˈɪnfərəns/`
-- `Fine-tune`：微调；发音：`/ˈfaɪn tjuːn/`
-- `Workflow`：工作流；发音：`/ˈwɜːkfləʊ/`
-- `Planning`：规划；发音：`/ˈplænɪŋ/`
-- `Memory`：记忆；发音：`/ˈmeməri/`
-- `Reflection`：反思/自省；发音：`/rɪˈflekʃn/`
-- `Chunk` / `Chunks`：知识分块；发音：`/tʃʌŋk/`
-- `Query`：查询文本；发音：`/ˈkwɪəri/`
-- `Query Embedding`：查询向量；发音：`/ˈkwɪəri ɪmˈbedɪŋ/`
-- `Vector Similarity Ranking`：向量相似度排序；发音：`/ˈvektə(r) ˌsɪməˈlærəti ˈræŋkɪŋ/`
-- `Metadata Filters`：元数据过滤；发音：`/ˈmetədəɪtə ˈfɪltəz/`
-- `Top K`：召回条数上限；发音：`/tɒp keɪ/`
-- `Source` / `Knowledge Source`：知识来源；发音：`/sɔːs/`，`/ˈnɒlɪdʒ sɔːs/`
-
-## Documentation
-- [RAG Ingestion](docs/rag_ingestion.md)
-- [PR Acceptance Notes](docs/pr_acceptance.md)
-- [Testing](docs/testing.md)
-- [RAG-006 Eval Plan](docs/rag006_eval_plan.md)
+## Logging And Trace
+- Both modules use `Loguru + contextvars`, default output to console.
+- Optional file logging:
+  - stdout logging toggle: `BIZ_LOG_TO_STDOUT` / `RAG_LOG_TO_STDOUT` (default `true`)
+  - enable with `BIZ_LOG_TO_FILE=true` / `RAG_LOG_TO_FILE=true`
+  - default directory: `logs/`
+  - filename format: `{service_name}.YYYY-MM-DD.log`
+- Incoming request headers:
+  - `X-Trace-Id` (optional; auto-generated if missing)
+- `rag-core` -> `biz-api` httpx calls will propagate `X-Trace-Id` for cross-service tracing.
 
 ## RAG-006 Eval (Phase 2)
 Data dependency:
@@ -250,3 +231,38 @@ python scripts/rag006_run_eval.py \
 Outputs:
 - `reports/rag006_eval_summary.json`
 - `reports/rag006_eval_failures.jsonl`
+
+## AI 术语对照（中英 + 发音）
+- `Agent`：智能体；发音：`/ˈeɪdʒənt/`
+- `LLM`：大语言模型；发音：`L-L-M`
+- `Large Language Model`：大语言模型；发音：`/lɑːdʒ ˈlæŋɡwɪdʒ ˈmɒdl/`
+- `Retrieve`：召回；发音：`/rɪˈtriːv/`
+- `Retrieval`：检索；发音：`/rɪˈtriːvl/`
+- `Augmented`：增强；发音：`/ɔːɡˈmentɪd/`
+- `Generation`：生成；发音：`/ˌdʒenəˈreɪʃn/`
+- `RAG`：检索增强生成；发音：`R-A-G` 或 `/ræɡ/`
+- `Vector`：向量；发音：`/ˈvektə(r)/`
+- `Embedding`：嵌入/词向量；发音：`/ɪmˈbedɪŋ/`
+- `Database`：数据库；发音：`/ˈdeɪtəbeɪs/`
+- `Tool Call`：工具调用；发音：`/tuːl kɔːl/`
+- `Prompt`：提示词；发音：`/prɒmpt/`
+- `Token`：令牌/词元；发音：`/ˈtəʊkən/`
+- `Inference`：推理；发音：`/ˈɪnfərəns/`
+- `Fine-tune`：微调；发音：`/ˈfaɪn tjuːn/`
+- `Workflow`：工作流；发音：`/ˈwɜːkfləʊ/`
+- `Planning`：规划；发音：`/ˈplænɪŋ/`
+- `Memory`：记忆；发音：`/ˈmeməri/`
+- `Reflection`：反思/自省；发音：`/rɪˈflekʃn/`
+- `Chunk` / `Chunks`：知识分块；发音：`/tʃʌŋk/`
+- `Query`：查询文本；发音：`/ˈkwɪəri/`
+- `Query Embedding`：查询向量；发音：`/ˈkwɪəri ɪmˈbedɪŋ/`
+- `Vector Similarity Ranking`：向量相似度排序；发音：`/ˈvektə(r) ˌsɪməˈlærəti ˈræŋkɪŋ/`
+- `Metadata Filters`：元数据过滤；发音：`/ˈmetədəɪtə ˈfɪltəz/`
+- `Top K`：召回条数上限；发音：`/tɒp keɪ/`
+- `Source` / `Knowledge Source`：知识来源；发音：`/sɔːs/`，`/ˈnɒlɪdʒ sɔːs/`
+
+## Documentation
+- [RAG Ingestion](docs/rag_ingestion.md)
+- [PR Acceptance Notes](docs/pr_acceptance.md)
+- [Testing](docs/testing.md)
+- [RAG-006 Eval Plan](docs/rag006_eval_plan.md)
