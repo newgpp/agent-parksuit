@@ -473,10 +473,10 @@
       - arrears list -> dispute one order amount
       - missing parameter -> follow-up补参
       - referential follow-up (`第一笔` / `上一单`)
-  - PR-2 (current): API/session contract
+  - PR-2 (done): API/session contract
     - add `session_id` and optional `turn_id` to hybrid request/response schema
     - define turn persistence model and memory TTL
-  - PR-3: workflow integration
+  - PR-3 (current): workflow integration
     - add memory read/write layer before intent routing and tool calls
     - deterministic slot resolution for follow-up questions
   - PR-4: tests + eval
@@ -487,6 +487,7 @@
   - follow-up referential query can map to deterministic `order_no`
   - response includes memory trace for auditable slot来源
 - Implemented in PR-2 (current):
+- Implemented in PR-2 (done):
   - schemas:
     - `HybridAnswerRequest`: `session_id`/`turn_id` added
     - `HybridAnswerResponse`: `session_id`/`turn_id`/`memory_ttl_seconds` added
@@ -497,6 +498,18 @@
     - `RAG_MEMORY_TTL_SECONDS` / `RAG_MEMORY_MAX_TURNS`
   - tests:
     - `tests/rag_core/test_routes_hybrid_integration.py` asserts session contract fields
+- Implemented in PR-3 (current):
+  - memory service:
+    - `src/agent_parksuite_rag_core/services/memory.py`
+    - pluggable session memory repository interface + in-memory TTL implementation
+  - workflow integration (`run_hybrid_answering`):
+    - `memory_hydrate`: carry-over slots (`city_code/lot_code/plate_no/order_no`) and `intent_hint`
+    - reference resolution for follow-up (`这笔/上一单`) with deterministic behavior
+    - ambiguity guard: multiple candidate orders -> ask clarification, no blind selection
+    - `memory_persist`: persist intent/slots/order candidates/turn summary after each turn
+  - tests:
+    - `tests/rag_core/test_routes_hybrid_memory_integration.py`
+    - covers same-session order carry-over and cross-session isolation
 
 ## Open items
 - Define and document `rule_payload` schema contract more strictly (JSON Schema / Pydantic typed segments)

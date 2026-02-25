@@ -68,10 +68,6 @@ RAG-009 PR-2 session contract integration check (`session_id/turn_id/memory_ttl_
 docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_rag_test;"
 
 export RAG_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag_test
-export RAG_DATABASE_URL=$RAG_TEST_DATABASE_URL
-
-# ensure schema is ready
-alembic upgrade head
 
 pytest tests/rag_core/test_routes_hybrid_integration.py -k "hybrid_answer"
 ```
@@ -82,6 +78,15 @@ pytest tests/rag_core/test_routes_hybrid_integration.py -k "hybrid_answer"
   - 未传 `turn_id` 时响应应自动生成（通常前缀 `turn-`）。
   - 响应包含 `memory_ttl_seconds > 0`。
 - 多轮自动继承（短期记忆读写）属于 RAG-009 PR-3，不在本步骤验收。
+
+RAG-009 PR-3 short-term memory integration tests:
+```bash
+export RAG_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag_test
+pytest tests/rag_core/test_routes_hybrid_memory_integration.py
+```
+说明：
+- 覆盖同会话继承：turn-2 无 `order_no` 时，从 turn-1 欠费结果继承候选订单。
+- 覆盖会话隔离：不同 `session_id` 不应继承前一会话的订单上下文。
 
 ## Manual E2E Tests (Real LLM)
 完整步骤与示例请求见：

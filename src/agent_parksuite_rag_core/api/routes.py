@@ -162,6 +162,7 @@ async def answer_hybrid(
 ) -> HybridAnswerResponse:
     repo = KnowledgeRepository(session=session, embedding_dim=settings.embedding_dim)
     turn_id = (payload.turn_id or "").strip() or f"turn-{uuid4().hex[:12]}"
+    payload = payload.model_copy(update={"turn_id": turn_id})
     logger.info(
         "hybrid request received session_id={} turn_id={} top_k={} hint={} source_ids={}",
         payload.session_id,

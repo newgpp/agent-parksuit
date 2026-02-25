@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Awaitable, Callable
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -11,10 +12,14 @@ from agent_parksuite_rag_core.config import settings
 from agent_parksuite_rag_core.schemas.answer import HybridAnswerRequest
 from agent_parksuite_rag_core.schemas.retrieve import RetrieveResponseItem
 from agent_parksuite_rag_core.services.answering import _extract_json_payload, generate_hybrid_answer
+from agent_parksuite_rag_core.services.memory import SessionMemoryState, get_session_memory_repo
 from agent_parksuite_rag_core.tools.biz_fact_tools import BizFactTools
 from agent_parksuite_rag_core.workflows.hybrid_answer import HybridGraphState, run_hybrid_workflow
 
 RetrieveFn = Callable[[HybridAnswerRequest], Awaitable[list[RetrieveResponseItem]]]
+_ORDER_NO_PATTERN = re.compile(r"\bSCN-\d+\b", re.IGNORECASE)
+_ORDER_REF_TOKENS = ("上一单", "上一笔", "这笔", "这单", "第一笔")
+_INTENT_CARRY_VALUES = {"rule_explain", "arrears_check", "fee_verify"}
 
 
 def _log_payload_text(text: str) -> str:
@@ -33,6 +38,119 @@ def _rule_route_intent(payload: HybridAnswerRequest) -> str:
     if payload.plate_no or any(token in query for token in ("欠费", "补缴", "未缴", "车牌")):
         return "arrears_check"
     return "rule_explain"
+
+
+def _extract_order_no_from_query(query: str) -> str | None:
+    match = _ORDER_NO_PATTERN.search(query)
+    if not match:
+        return None
+    return match.group(0).upper()
+
+
+def _wants_order_reference(query: str) -> bool:
+    return any(token in query for token in _ORDER_REF_TOKENS)
+
+
+def _apply_memory_hydrate(
+    payload: HybridAnswerRequest,
+    memory_state: SessionMemoryState | None,
+) -> tuple[HybridAnswerRequest, list[str], str | None]:
+    if not memory_state:
+        return payload, ["memory_hydrate:none"], None
+
+    traces: list[str] = []
+    updates: dict[str, Any] = {}
+    slots = dict(memory_state.get("slots", {}))
+
+    for key in ("city_code", "lot_code", "plate_no"):
+        if getattr(payload, key) is None and slots.get(key):
+            updates[key] = slots[key]
+            traces.append(f"memory_hydrate:{key}")
+
+    if payload.intent_hint not in _INTENT_CARRY_VALUES:
+        last_intent = str(memory_state.get("last_intent", "")).strip()
+        if last_intent in _INTENT_CARRY_VALUES:
+            updates["intent_hint"] = last_intent
+            traces.append("memory_hydrate:intent_hint")
+
+    if payload.order_no is None:
+        from_query = _extract_order_no_from_query(payload.query)
+        if from_query:
+            updates["order_no"] = from_query
+            traces.append("memory_hydrate:order_no_from_query")
+        else:
+            candidates = [str(x) for x in memory_state.get("order_candidates", []) if str(x)]
+            if _wants_order_reference(payload.query):
+                if len(candidates) == 1:
+                    updates["order_no"] = candidates[0]
+                    traces.append("memory_hydrate:order_no_from_reference")
+                elif len(candidates) > 1:
+                    clarify = "检测到多笔候选订单，请补充明确的order_no后再核验金额。"
+                    if "intent_hint" not in updates and payload.intent_hint not in _INTENT_CARRY_VALUES:
+                        updates["intent_hint"] = "fee_verify"
+                    hydrated = payload.model_copy(update=updates) if updates else payload
+                    traces.append("memory_hydrate:order_reference_ambiguous")
+                    return hydrated, traces, clarify
+            elif len(candidates) == 1 and (
+                payload.intent_hint == "fee_verify" or any(token in payload.query for token in ("金额", "核验", "订单"))
+            ):
+                updates["order_no"] = candidates[0]
+                traces.append("memory_hydrate:order_no_from_single_candidate")
+
+    hydrated = payload.model_copy(update=updates) if updates else payload
+    return hydrated, traces or ["memory_hydrate:hit"], None
+
+
+async def _persist_session_memory(
+    payload: HybridAnswerRequest,
+    result: HybridGraphState,
+    previous_state: SessionMemoryState | None,
+) -> None:
+    session_id = (payload.session_id or "").strip()
+    if not session_id:
+        return
+
+    repo = get_session_memory_repo()
+    old = previous_state or {}
+    slots: dict[str, Any] = dict(old.get("slots", {}))
+    for key in ("city_code", "lot_code", "plate_no", "order_no", "at_time"):
+        value = getattr(payload, key)
+        if value is not None:
+            slots[key] = value
+
+    facts = dict(result.get("business_facts", {}))
+    if facts.get("order_no"):
+        slots["order_no"] = facts["order_no"]
+    if facts.get("plate_no"):
+        slots["plate_no"] = facts["plate_no"]
+    if facts.get("city_code"):
+        slots["city_code"] = facts["city_code"]
+
+    order_candidates = [str(x) for x in old.get("order_candidates", []) if str(x)]
+    if isinstance(facts.get("arrears_order_nos"), list):
+        order_candidates = [str(x) for x in facts["arrears_order_nos"] if str(x)]
+    elif facts.get("order_no"):
+        order_candidates = [str(facts["order_no"])]
+
+    turns = list(old.get("turns", []))
+    turns.append(
+        {
+            "turn_id": payload.turn_id,
+            "query": payload.query,
+            "intent": result.get("intent", ""),
+            "order_no": slots.get("order_no"),
+        }
+    )
+    if len(turns) > settings.memory_max_turns:
+        turns = turns[-settings.memory_max_turns :]
+
+    new_state: SessionMemoryState = {
+        "slots": slots,
+        "last_intent": str(result.get("intent", old.get("last_intent", ""))),
+        "order_candidates": order_candidates,
+        "turns": turns,
+    }
+    await repo.save_session(session_id, new_state, settings.memory_ttl_seconds)
 
 
 async def _classify_intent(payload: HybridAnswerRequest) -> str:
@@ -98,6 +216,28 @@ async def run_hybrid_answering(
     payload: HybridAnswerRequest,
     retrieve_fn: RetrieveFn,
 ) -> HybridGraphState:
+    memory_state: SessionMemoryState | None = None
+    memory_trace: list[str] = []
+    if payload.session_id:
+        memory_state = await get_session_memory_repo().get_session(payload.session_id)
+        payload, memory_trace, clarify_reason = _apply_memory_hydrate(payload, memory_state)
+        if clarify_reason:
+            result: HybridGraphState = {
+                "intent": payload.intent_hint or "fee_verify",
+                "retrieved_items": [],
+                "business_facts": {
+                    "intent": payload.intent_hint or "fee_verify",
+                    "error": "order_reference_ambiguous",
+                    "order_candidates": list((memory_state or {}).get("order_candidates", [])),
+                },
+                "conclusion": clarify_reason,
+                "key_points": ["请提供明确的订单号（order_no），例如 SCN-020。"],
+                "model": "",
+                "trace": [*memory_trace, "answer_synthesizer:memory_clarify"],
+            }
+            await _persist_session_memory(payload, result, memory_state)
+            return result
+
     logger.info(
         "hybrid start session_id={} turn_id={} query_len={} top_k={} hint={} city_code={} lot_code={}",
         payload.session_id,
@@ -136,7 +276,7 @@ async def run_hybrid_answering(
     async def _classify_fn(p: HybridAnswerRequest) -> str:
         return await _classify_intent(p)
 
-    return await run_hybrid_workflow(
+    result = await run_hybrid_workflow(
         payload=payload,
         retrieve_fn=retrieve_fn,
         classify_fn=_classify_fn,
@@ -144,3 +284,7 @@ async def run_hybrid_answering(
         fee_facts_fn=_fee_facts_fn,
         synthesize_fn=_synthesize_fn,
     )
+    if payload.session_id:
+        result["trace"] = [*memory_trace, *result.get("trace", []), "memory_persist"]
+        await _persist_session_memory(payload, result, memory_state)
+    return result
