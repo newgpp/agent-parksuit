@@ -2,6 +2,10 @@
 
 用于 PR 验收与真实链路联调，包含自动验收（入库与检索）和手工 E2E（真实 LLM + 真实服务调用）。
 
+## PR Status Note
+- `RAG-007` is currently marked as `Paused`.
+- Current baseline keeps `RAG-005` orchestration with branch-level `graph_trace`, which is sufficient for present acceptance scope.
+
 ## 1. 数据与入库验收（RAG-002）
 1. （可选）重建 `parksuite_rag`（当迁移状态异常或历史脏数据较多时）
 ```bash

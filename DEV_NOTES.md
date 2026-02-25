@@ -414,14 +414,31 @@
 - Design doc:
   - `docs/rag006_eval_plan.md`
 
-### RAG-007: Explicit planner layer
-- Add a planning step before execution:
-  - identify intent type (explanation / arrears check / fee verification / mixed)
-  - generate ordered action plan (RAG retrieve, biz-tool calls, final synthesis)
-- Enforce structured plan output with plan IDs and step statuses
+### RAG-007: Lightweight orchestration refinement (Paused)
+- Status: `Paused`
+- Reason: current `RAG-005` flow already meets online usage for 3 core scenarios, with `graph_trace` for branch observability.
+- Resume trigger:
+  - need step-level status trace beyond current branch-level trace, or
+  - need measurable latency/maintainability improvement from finer-grained orchestration.
+- Goal: keep `RAG-005` simple and optimize for the 3 core user scenarios:
+  - `rule_explain`: explain billing rules
+  - `arrears_check`: query arrears orders
+  - `fee_verify`: verify disputed fee with simulation
+- Scope:
+  - keep fixed LangGraph topology (no dynamic graph generation)
+  - one-time intent routing at request start (avoid per-step LLM routing)
+  - add deterministic per-intent step chain:
+    - `rule_explain`: `rag_retrieve -> answer_synthesizer`
+    - `arrears_check`: `tool_get_arrears -> answer_synthesizer` (RAG optional)
+    - `fee_verify`: `tool_get_order -> tool_simulate -> answer_synthesizer` (RAG optional)
+  - add lightweight execution trace (`plan_trace`/`graph_trace`) with step status for observability
+- Non-goals:
+  - no generic planner DSL
+  - no mixed-intent multi-branch optimizer in this phase
 - Acceptance:
-  - each answer request has an auditable execution plan
-  - mixed queries trigger both retrieval and tool calls in deterministic order
+  - no extra LLM calls beyond route/classify + final synthesis
+  - each request exposes deterministic executed steps and statuses
+  - latency is improved or unchanged compared with current `RAG-005`
 
 ### RAG-008: Evaluator-optimizer loop
 - Add response evaluator after first draft:
