@@ -459,5 +459,33 @@
   - failed first-pass answers can be corrected automatically
   - evaluation result is logged with pass/fail reason and retry path
 
+### RAG-009: Multi-turn short-term memory
+- Goal:
+  - support short-term conversational memory for follow-up questions in the same session
+  - prioritize deterministic slot carry-over for parking domain (`city_code/lot_code/plate_no/order_no`)
+- Scope boundary:
+  - only short-term memory (recent turns + extracted slots)
+  - no long-term profile memory and no cross-session recall
+- PR split:
+  - PR-1 (current): acceptance dataset and scenario definition
+    - deliver `data/rag009/memory_acceptance_cases.jsonl`
+    - cover core multi-turn chains:
+      - arrears list -> dispute one order amount
+      - missing parameter -> follow-up补参
+      - referential follow-up (`第一笔` / `上一单`)
+  - PR-2: API/session contract
+    - add `session_id` and optional `turn_id` to hybrid request/response schema
+    - define turn persistence model and memory TTL
+  - PR-3: workflow integration
+    - add memory read/write layer before intent routing and tool calls
+    - deterministic slot resolution for follow-up questions
+  - PR-4: tests + eval
+    - integration tests for multi-turn carry-over
+    - dataset replay script for short-term memory acceptance
+- Acceptance (target):
+  - turn-2/turn-3 can resolve omitted fields from prior turns in same session
+  - follow-up referential query can map to deterministic `order_no`
+  - response includes memory trace for auditable slot来源
+
 ## Open items
 - Define and document `rule_payload` schema contract more strictly (JSON Schema / Pydantic typed segments)
