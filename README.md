@@ -1,6 +1,6 @@
 # agent-parksuit
 
-面向停车计费场景的 Agent 工程项目（FastAPI + PostgreSQL + pgvector），包含业务工具服务、RAG 服务、离线评测模块。
+面向停车计费场景的 Agent 工程项目（FastAPI + LangGraph + PostgreSQL + pgvector），包含业务工具服务、RAG 服务、离线评测模块。
 
 ## Highlights
 - Hybrid Agent 链路可落地：`RAG + biz tools + LLM`，已支持 `rule_explain / arrears_check / fee_verify` 三类真实场景。
@@ -20,7 +20,30 @@
   - 评测数据集（RAG-006）
   - 评测回放脚本与报告
 
+## Eval Snapshot (RAG-006)
+当前离线评测基线（60 条）：
+- `retrieval_hit_rate`: `1.0`
+- `citation_coverage`: `1.0`
+- `tool_call_compliance_rate`: `1.0`
+- `answer_consistency_rate`: `1.0`
+- `empty_retrieval_rate`: `0.1`（主要来自负样本）
+
 ## Core API Capabilities
+
+### `/api/v1/answer/hybrid` Flow
+```mermaid
+flowchart TD
+    A[POST /api/v1/answer/hybrid] --> B[intent_classifier<br/>LLM classify + rule fallback]
+    B -->|rule_explain| C[rule_explain_flow]
+    B -->|arrears_check| D[arrears_check_flow]
+    B -->|fee_verify| E[fee_verify_flow]
+
+    C --> F[rag_retrieve]
+    E --> F
+    D --> G[answer_synthesizer]
+    F --> G
+    G --> H[HybridAnswerResponse]
+```
 
 ### Biz API
 - `POST /api/v1/billing-rules` upsert billing rule
@@ -38,28 +61,6 @@
 - `POST /api/v1/answer` generate answer with conclusion/key points/citations (DeepSeek)
 - `POST /api/v1/answer/hybrid` hybrid answer (LangGraph + one-shot intent routing + biz tools + optional RAG evidence)
 
-### `/api/v1/answer/hybrid` Flow
-```mermaid
-flowchart TD
-    A[POST /api/v1/answer/hybrid] --> B[intent_classifier<br/>LLM classify + rule fallback]
-    B -->|rule_explain| C[rule_explain_flow]
-    B -->|arrears_check| D[arrears_check_flow]
-    B -->|fee_verify| E[fee_verify_flow]
-
-    C --> F[rag_retrieve]
-    E --> F
-    D --> G[answer_synthesizer]
-    F --> G
-    G --> H[HybridAnswerResponse]
-```
-
-## Eval Snapshot (RAG-006)
-当前离线评测基线（60 条）：
-- `retrieval_hit_rate`: `1.0`
-- `citation_coverage`: `1.0`
-- `tool_call_compliance_rate`: `1.0`
-- `answer_consistency_rate`: `1.0`
-- `empty_retrieval_rate`: `0.1`（主要来自负样本）
 
 ## Quick Start
 
