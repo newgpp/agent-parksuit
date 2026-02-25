@@ -7,6 +7,7 @@ from typing import Any
 @dataclass(slots=True)
 class EvalQuery:
     eval_id: str
+    group: str
     intent: str
     query: str
     context: dict[str, Any] = field(default_factory=dict)
@@ -23,3 +24,19 @@ class EvalSummary:
     empty_retrieval_rate: float
     tool_call_compliance_rate: float
     answer_consistency_rate: float
+
+
+@dataclass(slots=True)
+class EvalSampleResult:
+    eval_id: str
+    group: str
+    intent: str
+    retrieval_ok: bool
+    citation_ok: bool
+    tool_ok: bool
+    answer_ok: bool
+    retrieval_count: int
+    citation_count: int
+    expected_tools: list[str] = field(default_factory=list)
+    executed_tools: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)

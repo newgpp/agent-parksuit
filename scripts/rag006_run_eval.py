@@ -18,9 +18,28 @@ def main() -> None:
         default="reports",
         help="Directory for evaluation reports",
     )
+    parser.add_argument(
+        "--rag-base-url",
+        default="http://127.0.0.1:8002",
+        help="RAG core API base URL",
+    )
+    parser.add_argument(
+        "--timeout-seconds",
+        type=float,
+        default=30.0,
+        help="HTTP timeout per request (seconds)",
+    )
     args = parser.parse_args()
 
-    raise SystemExit(run_eval(Path(args.dataset_path), Path(args.report_dir)))
+    code = run_eval(
+        dataset_path=Path(args.dataset_path),
+        report_dir=Path(args.report_dir),
+        rag_base_url=args.rag_base_url,
+        timeout_seconds=args.timeout_seconds,
+    )
+    print(f"RAG-006 eval done. summary={Path(args.report_dir) / 'rag006_eval_summary.json'}")
+    print(f"RAG-006 eval failures={Path(args.report_dir) / 'rag006_eval_failures.jsonl'}")
+    raise SystemExit(code)
 
 
 if __name__ == "__main__":

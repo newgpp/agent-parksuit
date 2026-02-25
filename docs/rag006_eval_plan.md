@@ -14,6 +14,42 @@ Build a reproducible offline evaluation baseline for RAG quality before RAG-007/
   - regression comparison across commits
   - stable execution profile and docs
 
+## Data Dependencies
+RAG-006 evaluation depends on two databases:
+- `parksuite_biz_seed` (biz facts / orders / rules)
+- `parksuite_rag` (knowledge sources/chunks for retrieval)
+
+Recommended initialization order:
+1. Rebuild `parksuite_biz_seed` and seed RAG-000 scenarios.
+2. Rebuild `parksuite_rag` and ingest RAG knowledge from `data/rag000/scenarios.jsonl`.
+3. Run RAG-006 evaluation script against running APIs.
+
+## DB Cleanup And Init
+```bash
+# 1) Recreate biz seed DB
+docker exec -it parksuite-pg psql -U postgres -d postgres -c "DROP DATABASE IF EXISTS parksuite_biz_seed;"
+docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_biz_seed;"
+BIZ_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz_seed alembic upgrade head
+
+# 2) Seed biz scenarios and export JSONL
+python scripts/rag000_seed_biz_scenarios.py \
+  --database-url postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz_seed \
+  --export-jsonl data/rag000/scenarios.jsonl
+
+# 3) Recreate rag DB and enable pgvector
+docker exec -it parksuite-pg psql -U postgres -d postgres -c "DROP DATABASE IF EXISTS parksuite_rag;"
+docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_rag;"
+docker exec -it parksuite-pg psql -U postgres -d parksuite_rag -c "CREATE EXTENSION IF NOT EXISTS vector;"
+RAG_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag alembic upgrade head
+
+# 4) Ingest knowledge into parksuite_rag
+python scripts/rag002_ingest_knowledge.py \
+  --database-url postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag \
+  --input-type scenarios_jsonl \
+  --input-path data/rag000/scenarios.jsonl \
+  --replace-existing
+```
+
 ## Target Size
 - Total: 60 evaluation queries
 - Split by intent:

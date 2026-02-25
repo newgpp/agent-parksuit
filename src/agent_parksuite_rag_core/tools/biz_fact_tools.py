@@ -4,6 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
+import httpx
 from loguru import logger
 
 from agent_parksuite_rag_core.clients.biz_api_client import BizApiClient
@@ -20,7 +21,27 @@ class BizFactTools:
 
     async def build_arrears_facts(self, payload: HybridAnswerRequest) -> dict[str, Any]:
         logger.info("tool[arrears_check] start plate_no={} city_code={}", payload.plate_no, payload.city_code)
-        rows = await self.biz_client.get_arrears_orders(plate_no=payload.plate_no, city_code=payload.city_code)
+        attempted_tools = ["GET /api/v1/arrears-orders"]
+        try:
+            rows = await self.biz_client.get_arrears_orders(plate_no=payload.plate_no, city_code=payload.city_code)
+        except httpx.HTTPStatusError as exc:
+            logger.warning("tool[arrears_check] http_error status={}", getattr(exc.response, "status_code", None))
+            return {
+                "intent": "arrears_check",
+                "plate_no": payload.plate_no,
+                "city_code": payload.city_code,
+                "error": "arrears_tool_http_error",
+                "attempted_tools": attempted_tools,
+            }
+        except httpx.RequestError:
+            logger.warning("tool[arrears_check] request_error")
+            return {
+                "intent": "arrears_check",
+                "plate_no": payload.plate_no,
+                "city_code": payload.city_code,
+                "error": "arrears_tool_request_error",
+                "attempted_tools": attempted_tools,
+            }
         logger.info("tool[arrears_check] done count={}", len(rows))
         return {
             "intent": "arrears_check",
@@ -29,35 +50,92 @@ class BizFactTools:
             "arrears_count": len(rows),
             "arrears_order_nos": [str(item.get("order_no", "")) for item in rows],
             "orders": rows,
+            "attempted_tools": attempted_tools,
         }
 
     async def build_fee_verify_facts(self, payload: HybridAnswerRequest) -> dict[str, Any]:
         if not payload.order_no:
             logger.info("tool[fee_verify] skip reason=missing_order_no")
-            return {"intent": "fee_verify", "error": "order_no is required for fee_verify"}
+            return {"intent": "fee_verify", "error": "order_no is required for fee_verify", "attempted_tools": []}
 
         logger.info("tool[fee_verify] start order_no={}", payload.order_no)
-        order = await self.biz_client.get_parking_order(order_no=payload.order_no)
+        attempted_tools = ["GET /api/v1/parking-orders/{order_no}"]
+        try:
+            order = await self.biz_client.get_parking_order(order_no=payload.order_no)
+        except httpx.HTTPStatusError as exc:
+            status_code = getattr(exc.response, "status_code", None)
+            logger.warning("tool[fee_verify] get_order_http_error status={} order_no={}", status_code, payload.order_no)
+            if status_code == 404:
+                return {
+                    "intent": "fee_verify",
+                    "order_no": payload.order_no,
+                    "error": "order_not_found",
+                    "attempted_tools": attempted_tools,
+                }
+            return {
+                "intent": "fee_verify",
+                "order_no": payload.order_no,
+                "error": "order_tool_http_error",
+                "attempted_tools": attempted_tools,
+            }
+        except httpx.RequestError:
+            logger.warning("tool[fee_verify] get_order_request_error order_no={}", payload.order_no)
+            return {
+                "intent": "fee_verify",
+                "order_no": payload.order_no,
+                "error": "order_tool_request_error",
+                "attempted_tools": attempted_tools,
+            }
         rule_code = payload.rule_code or str(order.get("billing_rule_code", ""))
 
         try:
             entry_time = payload.entry_time or datetime.fromisoformat(str(order.get("entry_time")))
         except Exception:
             logger.warning("tool[fee_verify] invalid_entry_time order_no={}", payload.order_no)
-            return {"intent": "fee_verify", "error": "entry_time is invalid for fee_verify"}
+            return {"intent": "fee_verify", "error": "entry_time is invalid for fee_verify", "attempted_tools": attempted_tools}
 
         exit_raw = payload.exit_time or order.get("exit_time")
         if exit_raw is None:
             logger.warning("tool[fee_verify] missing_exit_time order_no={}", payload.order_no)
-            return {"intent": "fee_verify", "error": "exit_time is required for fee_verify"}
+            return {"intent": "fee_verify", "error": "exit_time is required for fee_verify", "attempted_tools": attempted_tools}
 
         try:
             exit_time = exit_raw if isinstance(exit_raw, datetime) else datetime.fromisoformat(str(exit_raw))
         except Exception:
             logger.warning("tool[fee_verify] invalid_exit_time order_no={}", payload.order_no)
-            return {"intent": "fee_verify", "error": "exit_time is invalid for fee_verify"}
+            return {"intent": "fee_verify", "error": "exit_time is invalid for fee_verify", "attempted_tools": attempted_tools}
 
-        sim = await self.biz_client.simulate_billing(rule_code=rule_code, entry_time=entry_time, exit_time=exit_time)
+        try:
+            sim = await self.biz_client.simulate_billing(rule_code=rule_code, entry_time=entry_time, exit_time=exit_time)
+            attempted_tools.append("POST /api/v1/billing-rules/simulate")
+        except httpx.HTTPStatusError as exc:
+            logger.warning(
+                "tool[fee_verify] simulate_http_error status={} order_no={}",
+                getattr(exc.response, "status_code", None),
+                payload.order_no,
+            )
+            return {
+                "intent": "fee_verify",
+                "order_no": payload.order_no,
+                "rule_code": rule_code,
+                "entry_time": entry_time.isoformat(),
+                "exit_time": exit_time.isoformat(),
+                "error": "simulate_tool_http_error",
+                "order": order,
+                "attempted_tools": attempted_tools,
+            }
+        except httpx.RequestError:
+            logger.warning("tool[fee_verify] simulate_request_error order_no={}", payload.order_no)
+            return {
+                "intent": "fee_verify",
+                "order_no": payload.order_no,
+                "rule_code": rule_code,
+                "entry_time": entry_time.isoformat(),
+                "exit_time": exit_time.isoformat(),
+                "error": "simulate_tool_request_error",
+                "order": order,
+                "attempted_tools": attempted_tools,
+            }
         order_total = _normalize_decimal_str(order.get("total_amount", "0"))
         sim_total = _normalize_decimal_str(sim.get("total_amount", "0"))
         is_consistent = order_total == sim_total
@@ -78,4 +156,5 @@ class BizFactTools:
             "amount_check_action": "自动通过" if is_consistent else "需人工复核",
             "order": order,
             "simulation": sim,
+            "attempted_tools": attempted_tools,
         }

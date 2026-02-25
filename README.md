@@ -201,3 +201,41 @@ flowchart TD
 - [RAG Ingestion](docs/rag_ingestion.md)
 - [PR Acceptance Notes](docs/pr_acceptance.md)
 - [Testing](docs/testing.md)
+- [RAG-006 Eval Plan](docs/rag006_eval_plan.md)
+
+## RAG-006 Eval (Phase 2)
+Data dependency:
+- `parksuite_biz_seed` (seeded by `rag000_seed_biz_scenarios.py`)
+- `parksuite_rag` (ingested by `rag002_ingest_knowledge.py`)
+
+Recommended reset + init before eval:
+```bash
+docker exec -it parksuite-pg psql -U postgres -d postgres -c "DROP DATABASE IF EXISTS parksuite_biz_seed;"
+docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_biz_seed;"
+BIZ_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz_seed alembic upgrade head
+python scripts/rag000_seed_biz_scenarios.py \
+  --database-url postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz_seed \
+  --export-jsonl data/rag000/scenarios.jsonl
+
+docker exec -it parksuite-pg psql -U postgres -d postgres -c "DROP DATABASE IF EXISTS parksuite_rag;"
+docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_rag;"
+docker exec -it parksuite-pg psql -U postgres -d parksuite_rag -c "CREATE EXTENSION IF NOT EXISTS vector;"
+RAG_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag alembic upgrade head
+python scripts/rag002_ingest_knowledge.py \
+  --database-url postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag \
+  --input-type scenarios_jsonl \
+  --input-path data/rag000/scenarios.jsonl \
+  --replace-existing
+```
+
+Run offline evaluation replay (requires running `rag-core` API):
+```bash
+python scripts/rag006_run_eval.py \
+  --dataset-path data/rag006/eval_queries.jsonl \
+  --report-dir reports \
+  --rag-base-url http://127.0.0.1:8002
+```
+
+Outputs:
+- `reports/rag006_eval_summary.json`
+- `reports/rag006_eval_failures.jsonl`
