@@ -460,6 +460,7 @@
   - evaluation result is logged with pass/fail reason and retry path
 
 ### RAG-009: Multi-turn short-term memory
+- Status: `Done` (PR-1 ~ PR-4 completed)
 - Goal:
   - support short-term conversational memory for follow-up questions in the same session
   - prioritize deterministic slot carry-over for parking domain (`city_code/lot_code/plate_no/order_no`)
@@ -476,17 +477,16 @@
   - PR-2 (done): API/session contract
     - add `session_id` and optional `turn_id` to hybrid request/response schema
     - define turn persistence model and memory TTL
-  - PR-3 (current): workflow integration
+  - PR-3 (done): workflow integration
     - add memory read/write layer before intent routing and tool calls
     - deterministic slot resolution for follow-up questions
-  - PR-4: tests + eval
+  - PR-4 (done): tests + eval
     - integration tests for multi-turn carry-over
     - dataset replay script for short-term memory acceptance
-- Acceptance (target):
+- Acceptance:
   - turn-2/turn-3 can resolve omitted fields from prior turns in same session
   - follow-up referential query can map to deterministic `order_no`
   - response includes memory trace for auditable slot来源
-- Implemented in PR-2 (current):
 - Implemented in PR-2 (done):
   - schemas:
     - `HybridAnswerRequest`: `session_id`/`turn_id` added
@@ -498,7 +498,7 @@
     - `RAG_MEMORY_TTL_SECONDS` / `RAG_MEMORY_MAX_TURNS`
   - tests:
     - `tests/rag_core/test_routes_hybrid_integration.py` asserts session contract fields
-- Implemented in PR-3 (current):
+- Implemented in PR-3 (done):
   - memory service:
     - `src/agent_parksuite_rag_core/services/memory.py`
     - pluggable session memory repository interface + in-memory TTL implementation
@@ -510,6 +510,17 @@
   - tests:
     - `tests/rag_core/test_routes_hybrid_memory_integration.py`
     - covers same-session order carry-over and cross-session isolation
+- Implemented in PR-4 (done):
+  - replay/eval module:
+    - `src/agent_parksuite_eval/memory_replay.py`
+  - replay script entry:
+    - `scripts/rag009_replay_memory_acceptance.py`
+  - acceptance dataset:
+    - `data/rag009/memory_acceptance_cases.jsonl`
+  - doc:
+    - `README.md` (RAG-009 Memory Acceptance Replay section)
+  - latest acceptance result:
+    - replay summary `total_turns=12 passed=12 failed=0`
 
 ## Open items
 - Define and document `rule_payload` schema contract more strictly (JSON Schema / Pydantic typed segments)

@@ -6,6 +6,7 @@
 - Hybrid Agent 链路可落地：`RAG + biz tools + LLM`，已支持 `rule_explain / arrears_check / fee_verify` 三类真实场景。
 - 工程闭环完整：迁移、种子数据、入库、接口、集成测试、E2E、离线评测（`RAG-006`）。
 - 可观测性到位：`X-Trace-Id` 跨服务透传、结构化日志、`graph_trace` 可追踪执行分支。
+- 多轮短期记忆已落地（`RAG-009`）：支持会话内槽位继承、订单引用解析与歧义澄清，回放验收 `12/12` 通过。
 
 ## System Architecture
 - `agent_parksuite_biz_api`:
@@ -33,7 +34,9 @@
 ### `/api/v1/answer/hybrid` Flow
 ```mermaid
 flowchart TD
-    A[POST /api/v1/answer/hybrid] --> B[intent_classifier<br/>LLM classify + rule fallback]
+    A[POST /api/v1/answer/hybrid] --> M[memory_hydrate<br/>slot carry + reference resolve]
+    M -->|ambiguous order reference| X[memory clarify response]
+    M -->|resolved| B[intent_classifier<br/>LLM classify + rule fallback]
     B -->|rule_explain| C[rule_explain_flow]
     B -->|arrears_check| D[arrears_check_flow]
     B -->|fee_verify| E[fee_verify_flow]
@@ -42,7 +45,9 @@ flowchart TD
     E --> F
     D --> G[answer_synthesizer]
     F --> G
-    G --> H[HybridAnswerResponse]
+    G --> P[memory_persist]
+    X --> P
+    P --> H[HybridAnswerResponse]
 ```
 
 ### Biz API
@@ -60,6 +65,13 @@ flowchart TD
 - `POST /api/v1/retrieve` retrieve chunks by metadata filters (optional vector ranking)
 - `POST /api/v1/answer` generate answer with conclusion/key points/citations (DeepSeek)
 - `POST /api/v1/answer/hybrid` hybrid answer (LangGraph + one-shot intent routing + biz tools + optional RAG evidence)
+
+### RAG-009 Short-term Memory Highlights
+- 会话契约：`/api/v1/answer/hybrid` 支持 `session_id` / `turn_id`。
+- 槽位继承：`city_code` / `lot_code` / `plate_no` / `order_no` 可在同会话 follow-up 自动补全。
+- 引用解析：支持“这笔/上一单/第一笔”类引用；多候选订单时会触发澄清而非盲选。
+- 可审计性：`graph_trace` 包含 `memory_hydrate:*` 与 `memory_persist` 轨迹。
+- 隔离保证：不同 `session_id` 不共享短期记忆。
 
 
 ## Quick Start
