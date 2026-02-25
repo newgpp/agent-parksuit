@@ -93,7 +93,7 @@
   - day+night periodic with independent caps
   - tiered across days + night free (including end at 08:29 case)
 - Files:
-  - `tests/biz_api/test_billing_engine.py`
+  - `tests/biz_api/test_billing_engine_unit.py`
 
 ### BIZ-008: Alembic migration baseline (Doc + Implementation)
 - Goal:
@@ -121,8 +121,8 @@
 - Use unique test identifiers to avoid collisions when keeping historical test data
 - Files:
   - `tests/biz_api/conftest.py`
-  - `tests/biz_api/test_routes_billing.py`
-  - `tests/biz_api/test_routes_orders.py`
+  - `tests/biz_api/test_routes_billing_integration.py`
+  - `tests/biz_api/test_routes_orders_integration.py`
   - `README.md`
 
 ## Rag Core PR Plan
@@ -249,7 +249,7 @@
     - `src/agent_parksuite_rag_core/schemas/rag.py`
     - `src/agent_parksuite_rag_core/api/routes.py`
     - `tests/rag_core/conftest.py`
-    - `tests/rag_core/test_routes_rag.py`
+    - `tests/rag_core/test_routes_rag_integration.py`
 
 ### RAG-002: Ingestion pipeline
 - Add ingestion flow: clean text -> chunk -> embedding -> upsert
@@ -272,7 +272,7 @@
     - supports `--input-type scenarios_jsonl|markdown`
     - supports `--embedding-provider deterministic|openai`
   - tests:
-    - `tests/rag_core/test_ingestion_pipeline.py`
+    - `tests/rag_core/test_ingestion_pipeline_unit.py`
 
 ### RAG-003: Retrieve API (RAG retrieval core)
 - Implement `POST /api/v1/retrieve`
@@ -293,7 +293,7 @@
     - supports lexical preference ranking (no embedding) for scenario-style queries
     - deterministic tie-break ordering for stable top-k
   - tests:
-    - `tests/rag_core/test_routes_rag.py`
+    - `tests/rag_core/test_routes_rag_integration.py`
     - coverage for metadata/time filters
     - coverage for lexical preference without embedding
     - coverage for stable ordering under tied vector scores
@@ -316,7 +316,7 @@
     - `src/agent_parksuite_rag_core/schemas/rag.py` (`AnswerRequest/AnswerResponse/AnswerCitation`)
     - `src/agent_parksuite_rag_core/config.py` (`deepseek_api_key/base_url/model`)
   - tests:
-    - `tests/rag_core/test_routes_answer.py` (mocked LLM success/503 path)
+    - `tests/rag_core/test_routes_answer_integration.py` (mocked LLM success/503 path)
 
 ### RAG-005: Hybrid orchestration (RAG + biz tools)
 - Introduce LangGraph-based orchestration for hybrid answering:
@@ -384,7 +384,7 @@
     - `src/agent_parksuite_rag_core/schemas/rag.py` (`HybridAnswerRequest/HybridAnswerResponse`)
     - `src/agent_parksuite_rag_core/config.py` (`biz_api_base_url/biz_api_timeout_seconds`)
   - tests:
-    - `tests/rag_core/test_routes_hybrid.py`
+    - `tests/rag_core/test_routes_hybrid_integration.py`
     - uses `data/rag000/scenarios.jsonl` as dataset-driven integration input
     - validates `fee_verify` and `arrears_check` branch execution paths
 
