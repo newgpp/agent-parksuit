@@ -235,6 +235,37 @@ Outputs:
 - `reports/rag006_eval_summary.json`
 - `reports/rag006_eval_failures.jsonl`
 
+## RAG-009 Memory Acceptance Replay
+用途：回放 `data/rag009/memory_acceptance_cases.jsonl`，验收 `/api/v1/answer/hybrid` 的短期记忆行为（槽位继承、意图继承、订单引用澄清、会话隔离）。
+
+前置条件：
+- 已完成数据准备（`RAG-000` 种子 + `RAG-002` 入库）。
+- `biz-api` 与 `rag-core` 服务可访问（默认 `8001/8002`）。
+
+启动服务示例：
+```bash
+BIZ_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz_seed \
+uvicorn agent_parksuite_biz_api.main:app --host 127.0.0.1 --port 8001
+
+RAG_BIZ_API_BASE_URL=http://127.0.0.1:8001 \
+uvicorn agent_parksuite_rag_core.main:app --host 127.0.0.1 --port 8002
+```
+
+执行验收脚本：
+```bash
+python scripts/rag009_replay_memory_acceptance.py \
+  --dataset-path data/rag009/memory_acceptance_cases.jsonl \
+  --base-url http://127.0.0.1:8002
+```
+
+常用参数：
+- `--stop-on-fail`：遇到第一条失败立即停止，便于快速定位。
+- `--max-cases N`：只跑前 `N` 个 case，便于开发期迭代。
+- `--timeout-seconds`：单请求超时（默认 30 秒）。
+
+通过标准：
+- 输出末尾为 `failed=0`，例如：`[summary] total_turns=12 passed=12 failed=0`。
+
 ## AI 术语对照（中英 + 发音）
 - `Agent`：智能体；发音：`/ˈeɪdʒənt/`
 - `LLM`：大语言模型；发音：`L-L-M`
