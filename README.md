@@ -2,7 +2,7 @@
 
 面向停车计费场景的 Agent 工程项目（FastAPI + PostgreSQL + pgvector），包含业务工具服务、RAG 服务、离线评测模块。
 
-## Interview Highlights
+## Highlights
 - Hybrid Agent 链路可落地：`RAG + biz tools + LLM`，已支持 `rule_explain / arrears_check / fee_verify` 三类真实场景。
 - 工程闭环完整：迁移、种子数据、入库、接口、集成测试、E2E、离线评测（`RAG-006`）。
 - 可观测性到位：`X-Trace-Id` 跨服务透传、结构化日志、`graph_trace` 可追踪执行分支。
