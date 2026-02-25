@@ -88,6 +88,17 @@ pytest tests/rag_core/test_routes_hybrid_memory_integration.py
 - 覆盖同会话继承：turn-2 无 `order_no` 时，从 turn-1 欠费结果继承候选订单。
 - 覆盖会话隔离：不同 `session_id` 不应继承前一会话的订单上下文。
 
+RAG-009 PR-4 dataset replay (memory acceptance jsonl):
+```bash
+# ensure rag-core is running on :8002
+python scripts/rag009_replay_memory_acceptance.py \
+  --dataset-path data/rag009/memory_acceptance_cases.jsonl \
+  --base-url http://127.0.0.1:8002
+```
+说明：
+- 脚本会逐 case/turn 调用 `POST /api/v1/answer/hybrid` 并按 `expect` 字段做断言。
+- 若要失败即停止，可加 `--stop-on-fail`。
+
 ## Manual E2E Tests (Real LLM)
 完整步骤与示例请求见：
 - [Acceptance Guide](pr_acceptance.md)

@@ -18,9 +18,22 @@ This dataset is for multi-turn short-term memory acceptance, not for retrieval s
 
 Turn object:
 - `turn_id`: stable step id inside case.
-- `hybrid_request`: request payload target for `POST /api/v1/answer/hybrid` (future contract includes `session_id`).
+- `hybrid_request`: request payload target for `POST /api/v1/answer/hybrid` (includes `session_id`).
 - `expect`: acceptance expectations.
 
+## Replay
+Run PR-4 replay against a running `rag-core` service:
+
+```bash
+python scripts/rag009_replay_memory_acceptance.py \
+  --dataset-path data/rag009/memory_acceptance_cases.jsonl \
+  --base-url http://127.0.0.1:8002
+```
+
+Common options:
+- `--stop-on-fail`: stop on first failed turn.
+- `--max-cases N`: replay first `N` cases only.
+
 ## Notes
-- Current project has not enabled short-term memory API contract yet.
-- This dataset is prepared first for PR-1, then consumed by PR-2/PR-3 implementation and PR-4 replay tests.
+- This dataset is prepared in PR-1 and consumed by PR-4 replay/evaluation.
+- The replay validates behavior against `expect` rules; failed checks indicate implementation and expectation drift.
