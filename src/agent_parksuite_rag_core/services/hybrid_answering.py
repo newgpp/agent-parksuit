@@ -20,6 +20,7 @@ RetrieveFn = Callable[[HybridAnswerRequest], Awaitable[list[RetrieveResponseItem
 _ORDER_NO_PATTERN = re.compile(r"\bSCN-\d+\b", re.IGNORECASE)
 _ORDER_REF_TOKENS = ("上一单", "上一笔", "这笔", "这单", "第一笔")
 _INTENT_CARRY_VALUES = {"rule_explain", "arrears_check", "fee_verify"}
+_FIRST_ORDER_REF_TOKENS = ("第一笔", "第一单")
 
 
 def _log_payload_text(text: str) -> str:
@@ -51,6 +52,17 @@ def _wants_order_reference(query: str) -> bool:
     return any(token in query for token in _ORDER_REF_TOKENS)
 
 
+def _wants_first_order_reference(query: str) -> bool:
+    return any(token in query for token in _FIRST_ORDER_REF_TOKENS)
+
+
+def _looks_like_fee_verify_query(payload: HybridAnswerRequest) -> bool:
+    query = payload.query
+    if payload.order_no:
+        return True
+    return any(token in query for token in ("核验", "一致", "算错", "金额", "复核", "不对"))
+
+
 def _apply_memory_hydrate(
     payload: HybridAnswerRequest,
     memory_state: SessionMemoryState | None,
@@ -67,11 +79,16 @@ def _apply_memory_hydrate(
             updates[key] = slots[key]
             traces.append(f"memory_hydrate:{key}")
 
+    should_force_fee_verify = _looks_like_fee_verify_query(payload) or _wants_order_reference(payload.query)
     if payload.intent_hint not in _INTENT_CARRY_VALUES:
-        last_intent = str(memory_state.get("last_intent", "")).strip()
-        if last_intent in _INTENT_CARRY_VALUES:
-            updates["intent_hint"] = last_intent
-            traces.append("memory_hydrate:intent_hint")
+        if should_force_fee_verify:
+            updates["intent_hint"] = "fee_verify"
+            traces.append("memory_hydrate:intent_hint_fee_verify")
+        else:
+            last_intent = str(memory_state.get("last_intent", "")).strip()
+            if last_intent in _INTENT_CARRY_VALUES:
+                updates["intent_hint"] = last_intent
+                traces.append("memory_hydrate:intent_hint")
 
     if payload.order_no is None:
         from_query = _extract_order_no_from_query(payload.query)
@@ -81,19 +98,18 @@ def _apply_memory_hydrate(
         else:
             candidates = [str(x) for x in memory_state.get("order_candidates", []) if str(x)]
             if _wants_order_reference(payload.query):
-                if len(candidates) == 1:
+                wants_first = _wants_first_order_reference(payload.query)
+                if len(candidates) == 1 and not wants_first:
                     updates["order_no"] = candidates[0]
                     traces.append("memory_hydrate:order_no_from_reference")
-                elif len(candidates) > 1:
-                    clarify = "检测到多笔候选订单，请补充明确的order_no后再核验金额。"
+                elif len(candidates) > 1 or (wants_first and len(candidates) >= 1):
+                    clarify = "检测到候选订单，请明确订单号（order_no）后再核验金额。"
                     if "intent_hint" not in updates and payload.intent_hint not in _INTENT_CARRY_VALUES:
                         updates["intent_hint"] = "fee_verify"
                     hydrated = payload.model_copy(update=updates) if updates else payload
                     traces.append("memory_hydrate:order_reference_ambiguous")
                     return hydrated, traces, clarify
-            elif len(candidates) == 1 and (
-                payload.intent_hint == "fee_verify" or any(token in payload.query for token in ("金额", "核验", "订单"))
-            ):
+            elif len(candidates) == 1 and (payload.intent_hint == "fee_verify" or _looks_like_fee_verify_query(payload)):
                 updates["order_no"] = candidates[0]
                 traces.append("memory_hydrate:order_no_from_single_candidate")
 

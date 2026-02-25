@@ -56,7 +56,12 @@ class BizFactTools:
     async def build_fee_verify_facts(self, payload: HybridAnswerRequest) -> dict[str, Any]:
         if not payload.order_no:
             logger.info("tool[fee_verify] skip reason=missing_order_no")
-            return {"intent": "fee_verify", "error": "order_no is required for fee_verify", "attempted_tools": []}
+            return {
+                "intent": "fee_verify",
+                "error": "order_no is required for fee_verify",
+                "error_detail": "需要提供order_no后才能执行金额核验。",
+                "attempted_tools": [],
+            }
 
         logger.info("tool[fee_verify] start order_no={}", payload.order_no)
         attempted_tools = ["GET /api/v1/parking-orders/{order_no}"]

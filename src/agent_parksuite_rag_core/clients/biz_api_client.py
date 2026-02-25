@@ -23,7 +23,7 @@ class BizApiClient:
         url = f"{self.base_url}/api/v1/arrears-orders"
         headers = current_trace_headers()
         logger.info("client[biz_api] request method=GET url={} params={} headers={}", url, params, headers)
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+        async with httpx.AsyncClient(timeout=self.timeout_seconds, trust_env=False) as client:
             resp = await client.get(url, params=params, headers=headers)
             logger.info(
                 "client[biz_api] response method=GET url={} status={} body={}",
@@ -39,7 +39,7 @@ class BizApiClient:
         url = f"{self.base_url}/api/v1/parking-orders/{order_no}"
         headers = current_trace_headers()
         logger.info("client[biz_api] request method=GET url={} headers={}", url, headers)
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+        async with httpx.AsyncClient(timeout=self.timeout_seconds, trust_env=False) as client:
             resp = await client.get(url, headers=headers)
             logger.info(
                 "client[biz_api] response method=GET url={} status={} body={}",
@@ -60,7 +60,7 @@ class BizApiClient:
         url = f"{self.base_url}/api/v1/billing-rules/simulate"
         headers = current_trace_headers()
         logger.info("client[biz_api] request method=POST url={} json={} headers={}", url, payload, headers)
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+        async with httpx.AsyncClient(timeout=self.timeout_seconds, trust_env=False) as client:
             resp = await client.post(url, json=payload, headers=headers)
             logger.info(
                 "client[biz_api] response method=POST url={} status={} body={}",
@@ -71,4 +71,3 @@ class BizApiClient:
             resp.raise_for_status()
             data = resp.json()
             return data if isinstance(data, dict) else {}
-
