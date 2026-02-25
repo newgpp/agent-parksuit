@@ -22,9 +22,7 @@ def _load_eval_queries(dataset_path: Path) -> list[EvalQuery]:
             EvalQuery(
                 eval_id=str(raw.get("eval_id", "")),
                 group=str(raw.get("group", "")),
-                intent=str(raw.get("intent", "")),
-                query=str(raw.get("query", "")),
-                context=dict(raw.get("context", {})),
+                hybrid_request=dict(raw.get("hybrid_request", {})),
                 expected_retrieval=dict(raw.get("expected_retrieval", {})),
                 expected_tools=list(raw.get("expected_tools", [])),
                 expected_answer=dict(raw.get("expected_answer", {})),
@@ -33,38 +31,30 @@ def _load_eval_queries(dataset_path: Path) -> list[EvalQuery]:
     return rows
 
 
+def _resolve_intent(item: EvalQuery) -> str:
+    return str(item.hybrid_request.get("intent_hint", "")).strip()
+
+
 def _build_retrieve_payload(item: EvalQuery) -> dict[str, Any]:
-    ctx = item.context
+    hybrid = item.hybrid_request
     payload: dict[str, Any] = {
-        "query": item.query,
-        "top_k": 5,
-        "doc_type": "rule_explain",
-        "source_type": "biz_derived",
-        "include_inactive": False,
+        "query": str(hybrid.get("query", "")),
+        "top_k": int(hybrid.get("top_k", 5)),
+        "doc_type": hybrid.get("doc_type", "rule_explain"),
+        "source_type": hybrid.get("source_type", "biz_derived"),
+        "include_inactive": bool(hybrid.get("include_inactive", False)),
     }
-    if ctx.get("city_code"):
-        payload["city_code"] = ctx["city_code"]
-    if ctx.get("lot_code"):
-        payload["lot_code"] = ctx["lot_code"]
-    if ctx.get("at_time"):
-        payload["at_time"] = ctx["at_time"]
+    if hybrid.get("city_code"):
+        payload["city_code"] = hybrid["city_code"]
+    if hybrid.get("lot_code"):
+        payload["lot_code"] = hybrid["lot_code"]
+    if hybrid.get("at_time"):
+        payload["at_time"] = hybrid["at_time"]
     return payload
 
 
 def _build_hybrid_payload(item: EvalQuery) -> dict[str, Any]:
-    ctx = item.context
-    payload: dict[str, Any] = {
-        "query": item.query,
-        "intent_hint": item.intent,
-        "top_k": 5,
-        "doc_type": "rule_explain",
-        "source_type": "biz_derived",
-        "include_inactive": False,
-    }
-    for key in ("city_code", "lot_code", "at_time", "plate_no", "order_no"):
-        if ctx.get(key):
-            payload[key] = ctx[key]
-    return payload
+    return dict(item.hybrid_request)
 
 
 def _extract_executed_tools(intent: str, business_facts: dict[str, Any]) -> list[str]:
@@ -179,7 +169,8 @@ async def _run_eval_async(
                 errors.append("citation_expectation_failed")
 
             business_facts = dict(hybrid_body.get("business_facts", {})) if hybrid_body else {}
-            executed_tools = _extract_executed_tools(item.intent, business_facts)
+            intent = _resolve_intent(item)
+            executed_tools = _extract_executed_tools(intent, business_facts)
             tool_ok = set(item.expected_tools).issubset(set(executed_tools))
             if not tool_ok:
                 errors.append("tool_expectation_failed")
@@ -192,7 +183,7 @@ async def _run_eval_async(
                 EvalSampleResult(
                     eval_id=item.eval_id,
                     group=item.group,
-                    intent=item.intent,
+                    intent=intent,
                     retrieval_ok=retrieval_ok,
                     citation_ok=citation_ok,
                     tool_ok=tool_ok,

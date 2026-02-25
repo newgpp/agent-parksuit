@@ -8,9 +8,7 @@ from typing import Any
 class EvalQuery:
     eval_id: str
     group: str
-    intent: str
-    query: str
-    context: dict[str, Any] = field(default_factory=dict)
+    hybrid_request: dict[str, Any] = field(default_factory=dict)
     expected_retrieval: dict[str, Any] = field(default_factory=dict)
     expected_tools: list[str] = field(default_factory=list)
     expected_answer: dict[str, Any] = field(default_factory=dict)
