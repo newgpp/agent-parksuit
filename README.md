@@ -99,10 +99,13 @@ python scripts/rag000_seed_biz_scenarios.py \
   --export-jsonl data/rag000/scenarios.jsonl
 ```
 
-Optional:
+从 `RAG-000` 场景集生成知识分块并写入 `parksuite_rag`：
 ```bash
-# no JSONL export
-python scripts/rag000_seed_biz_scenarios.py --no-export
+python scripts/rag002_ingest_knowledge.py \
+  --database-url postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag \
+  --input-type scenarios_jsonl \
+  --input-path data/rag000/scenarios.jsonl \
+  --replace-existing
 ```
 
 RAG-000 场景覆盖清单：

@@ -396,6 +396,8 @@
   - empty retrieval rate
 - Acceptance:
   - one command can run baseline evaluation and output metric summary
+- Draft plan:
+  - `docs/rag006_eval_plan.md`
 
 ### RAG-007: Explicit planner layer
 - Add a planning step before execution:
