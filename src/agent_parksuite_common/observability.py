@@ -16,7 +16,12 @@ TRACE_ID_HEADER = "X-Trace-Id"
 trace_id_ctx: ContextVar[str] = ContextVar("trace_id", default="-")
 
 
-def setup_loguru(service_name: str, log_to_file: bool = False, log_dir: str = "logs") -> None:
+def setup_loguru(
+    service_name: str,
+    log_to_stdout: bool = True,
+    log_to_file: bool = False,
+    log_dir: str = "logs",
+) -> None:
     logger.remove()
     logger.configure(
         extra={"service": service_name},
@@ -26,17 +31,18 @@ def setup_loguru(service_name: str, log_to_file: bool = False, log_dir: str = "l
             }
         ),
     )
-    logger.add(
-        sys.stdout,
-        level="INFO",
-        enqueue=True,
-        backtrace=False,
-        diagnose=False,
-        format=(
-            "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level} | {extra[service]} "
-            "| trace_id={extra[trace_id]} | {message}"
-        ),
-    )
+    if log_to_stdout:
+        logger.add(
+            sys.stdout,
+            level="INFO",
+            enqueue=True,
+            backtrace=False,
+            diagnose=False,
+            format=(
+                "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level} | {extra[service]} "
+                "| trace_id={extra[trace_id]} | {message}"
+            ),
+        )
 
     if log_to_file:
         Path(log_dir).mkdir(parents=True, exist_ok=True)

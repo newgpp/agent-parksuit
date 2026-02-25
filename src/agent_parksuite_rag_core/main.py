@@ -13,6 +13,7 @@ from agent_parksuite_rag_core.db.session import init_db
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     setup_loguru(
         settings.app_name,
+        log_to_stdout=settings.log_to_stdout,
         log_to_file=settings.log_to_file,
         log_dir=settings.log_dir,
     )

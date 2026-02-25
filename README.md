@@ -38,6 +38,7 @@ docker exec -it parksuite-pg psql -U postgres -d parksuite_rag -c "CREATE EXTENS
 Use `.env` (optional):
 ```env
 BIZ_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz
+BIZ_LOG_TO_STDOUT=true
 BIZ_LOG_TO_FILE=false
 BIZ_LOG_DIR=logs
 RAG_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag
@@ -45,6 +46,7 @@ RAG_EMBEDDING_DIM=1536
 RAG_DEEPSEEK_API_KEY=
 RAG_DEEPSEEK_BASE_URL=https://api.deepseek.com
 RAG_DEEPSEEK_MODEL=deepseek-chat
+RAG_LOG_TO_STDOUT=true
 RAG_LOG_TO_FILE=false
 RAG_LOG_DIR=logs
 RAG_BIZ_API_BASE_URL=http://127.0.0.1:8001
@@ -60,6 +62,7 @@ uvicorn agent_parksuite_rag_core.main:app --reload --port 8002
 ## Logging And Trace
 - Both modules use `Loguru + contextvars`, default output to console.
 - Optional file logging:
+  - stdout logging toggle: `BIZ_LOG_TO_STDOUT` / `RAG_LOG_TO_STDOUT` (default `true`)
   - enable with `BIZ_LOG_TO_FILE=true` / `RAG_LOG_TO_FILE=true`
   - default directory: `logs/`
   - filename format: `{service_name}.YYYY-MM-DD.log`

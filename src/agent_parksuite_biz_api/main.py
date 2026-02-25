@@ -6,6 +6,7 @@ from agent_parksuite_biz_api.config import settings
 
 setup_loguru(
     settings.app_name,
+    log_to_stdout=settings.log_to_stdout,
     log_to_file=settings.log_to_file,
     log_dir=settings.log_dir,
 )
