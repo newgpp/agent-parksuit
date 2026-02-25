@@ -3,6 +3,17 @@
 ## Goal
 Build a reproducible offline evaluation baseline for RAG quality before RAG-007/RAG-008 changes.
 
+## Delivery Stages
+- Stage 1: dataset
+  - finalize `data/rag006/eval_queries.jsonl` with target coverage and expected results
+- Stage 2: report script
+  - implement `scripts/rag006_run_eval.py` + `src/agent_parksuite_eval/runner.py`
+  - generate `reports/rag006_eval_summary.json` and `reports/rag006_eval_failures.jsonl`
+- Stage 3: engineering
+  - CI gate by metric thresholds
+  - regression comparison across commits
+  - stable execution profile and docs
+
 ## Target Size
 - Total: 60 evaluation queries
 - Split by intent:

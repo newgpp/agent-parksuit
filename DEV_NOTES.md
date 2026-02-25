@@ -389,14 +389,29 @@
     - validates `fee_verify` and `arrears_check` branch execution paths
 
 ### RAG-006: Evaluation baseline and seed dataset
-- Build evaluation set (30-50 Q&A) for parking fee consultation
-- Add basic offline eval scripts and baseline metrics:
+- Implementation phases:
+  - Phase 1 (dataset first):
+    - build evaluation dataset (target 60 queries) in `data/rag006/eval_queries.jsonl`
+    - include retrieval/hybrid/negative/boundary cases with expected outputs
+  - Phase 2 (report script):
+    - implement offline evaluator script (`scripts/rag006_run_eval.py`)
+    - replay `/api/v1/retrieve` + `/api/v1/answer/hybrid`
+    - output summary and failure reports to `reports/`
+  - Phase 3 (engineering hardening):
+    - metric threshold gate in CI
+    - stable run profile (seed/config/report format)
+    - regression comparison between commits
+- Baseline metrics:
   - retrieval hit rate
   - citation coverage
   - empty retrieval rate
-- Acceptance:
-  - one command can run baseline evaluation and output metric summary
-- Draft plan:
+  - tool call compliance rate
+  - answer consistency rate
+- Acceptance (phase-wise):
+  - Phase 1: dataset schema finalized and sample set available
+  - Phase 2: one command generates metric report artifacts
+  - Phase 3: CI can block regressions by configured thresholds
+- Design doc:
   - `docs/rag006_eval_plan.md`
 
 ### RAG-007: Explicit planner layer

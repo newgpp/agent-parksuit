@@ -4,9 +4,14 @@ Place evaluation samples in `eval_queries.jsonl`.
 
 Expected line format (JSON object):
 - `eval_id`
+- `group` (`A_direct` / `B_paraphrase` / `C_negative` / `D_hybrid_boundary`)
 - `intent`
 - `query`
 - `context`
 - `expected_retrieval`
 - `expected_tools`
 - `expected_answer`
+
+Current baseline dataset:
+- total: 60
+- intent split: `rule_explain=30`, `arrears_check=12`, `fee_verify=18`
