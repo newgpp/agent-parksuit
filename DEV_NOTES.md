@@ -440,7 +440,15 @@
   - each request exposes deterministic executed steps and statuses
   - latency is improved or unchanged compared with current `RAG-005`
 
-### RAG-008: Evaluator-optimizer loop
+### RAG-008: Evaluator-optimizer loop (Paused)
+- Status: `Paused`
+- Reason:
+  - current tool set is small and deterministic, low chance of missing-tool recovery value
+  - current dataset scale is limited, retry via larger retrieval window has low marginal gain
+  - fact-conflict correction can be covered by lightweight guards instead of full retry loop
+- Resume trigger:
+  - tool surface expands and mixed workflows increase missed-step risk, or
+  - production traffic shows frequent fact-conflict / evidence-insufficient failures
 - Add response evaluator after first draft:
   - check evidence sufficiency (citations present and relevant)
   - check tool coverage (required tool calls executed for intent)
