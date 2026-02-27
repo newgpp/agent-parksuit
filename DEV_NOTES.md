@@ -679,5 +679,35 @@
   - keep existing `RAG-005/RAG-009` business workflow unchanged for clear-intent requests
   - ReAct path is clarification-only and should short-circuit before heavy business chain
 
+#### RAG-010 Refactor Plan (Complexity Control)
+- Goal:
+  - keep `slot_parse + slot_hydrate + react_clarify` capabilities
+  - reduce architecture complexity by enforcing single entry / single authority / clear boundaries
+- PR-A: unify resolver entry (in progress)
+  - all hybrid requests must run through:
+    - `intent_slot_parse -> slot_hydrate -> react_clarify_gate`
+  - `session_id` only controls memory read/write, not whether resolver runs
+  - acceptance:
+    - no-session and with-session requests use same pre-processing chain
+    - short-circuit behavior is consistent across session modes
+- PR-B: single intent authority
+  - intent authority moves to resolver/ReAct stage only
+  - downstream hybrid business flow consumes resolved intent; no second intent arbitration
+  - acceptance:
+    - one request has one final intent source
+    - remove intent conflict between resolver and hybrid classifier
+- PR-C: request/execute contract split
+  - external `HybridAnswerRequest` stays minimal
+  - internal execution uses resolved context model (`intent + slots + decision + source tags`)
+  - acceptance:
+    - biz tools/workflow no longer directly depend on bloated request fields
+- PR-D: memory/debug slimming
+  - memory stores only minimal runtime state:
+    - `slots`, `turns`, `pending_clarification` (and strictly required structured artifacts)
+  - debug/replay artifacts are decoupled from production critical path
+  - acceptance:
+    - memory payload size and coupling are reduced
+    - debug capability remains available via dedicated path
+
 ## Open items
 - Define and document `rule_payload` schema contract more strictly (JSON Schema / Pydantic typed segments)

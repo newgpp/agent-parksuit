@@ -161,45 +161,45 @@ async def run_hybrid_answering(
     retrieve_fn: RetrieveFn,
 ) -> HybridGraphState:
     memory_state: SessionMemoryState | None = None
-    memory_trace: list[str] = []
     if payload.session_id:
         memory_state = await get_session_memory_repo().get_session(payload.session_id)
-        resolved = await resolve_turn_context_async(payload=payload, memory_state=memory_state)
-        payload = resolved.payload
-        memory_trace = resolved.memory_trace
-        if resolved.decision in {"clarify_short_circuit", "clarify_react", "clarify_abort"} and resolved.clarify_reason:
-            clarified_intent = payload.intent_hint or ""
-            clarify_error = resolved.clarify_error or "clarification_required"
-            key_points = ["请提供明确的订单号（order_no），例如 SCN-020。"]
-            if clarify_error == "missing_plate_no":
-                key_points = ["请提供车牌号（plate_no），例如 沪A12345。"]
-            if clarify_error == "missing_intent":
-                key_points = ["请先确认问题类型：规则解释、欠费查询，或订单金额核验。"]
-            result: HybridGraphState = {
+    resolved = await resolve_turn_context_async(payload=payload, memory_state=memory_state)
+    payload = resolved.payload
+    memory_trace: list[str] = resolved.memory_trace
+    if resolved.decision in {"clarify_short_circuit", "clarify_react", "clarify_abort"} and resolved.clarify_reason:
+        clarified_intent = payload.intent_hint or ""
+        clarify_error = resolved.clarify_error or "clarification_required"
+        key_points = ["请提供明确的订单号（order_no），例如 SCN-020。"]
+        if clarify_error == "missing_plate_no":
+            key_points = ["请提供车牌号（plate_no），例如 沪A12345。"]
+        if clarify_error == "missing_intent":
+            key_points = ["请先确认问题类型：规则解释、欠费查询，或订单金额核验。"]
+        result: HybridGraphState = {
+            "intent": clarified_intent,
+            "retrieved_items": [],
+            "business_facts": {
                 "intent": clarified_intent,
-                "retrieved_items": [],
-                "business_facts": {
-                    "intent": clarified_intent,
+                "error": clarify_error,
+                "clarify_messages": resolved.clarify_messages or [],
+                "clarify_tool_trace": resolved.clarify_tool_trace or [],
+                "pending_clarification": {
+                    "decision": resolved.decision,
                     "error": clarify_error,
-                    "clarify_messages": resolved.clarify_messages or [],
-                    "clarify_tool_trace": resolved.clarify_tool_trace or [],
-                    "pending_clarification": {
-                        "decision": resolved.decision,
-                        "error": clarify_error,
-                    },
-                    "resolved_slots": {
-                        key: getattr(resolved.payload, key)
-                        for key in ("city_code", "lot_code", "plate_no", "order_no", "at_time")
-                        if getattr(resolved.payload, key) is not None
-                    },
                 },
-                "conclusion": resolved.clarify_reason,
-                "key_points": key_points,
-                "model": "",
-                "trace": [*memory_trace, f"answer_synthesizer:{resolved.decision}"],
-            }
+                "resolved_slots": {
+                    key: getattr(resolved.payload, key)
+                    for key in ("city_code", "lot_code", "plate_no", "order_no", "at_time")
+                    if getattr(resolved.payload, key) is not None
+                },
+            },
+            "conclusion": resolved.clarify_reason,
+            "key_points": key_points,
+            "model": "",
+            "trace": [*memory_trace, f"answer_synthesizer:{resolved.decision}"],
+        }
+        if payload.session_id:
             await _persist_session_memory(payload, result, memory_state)
-            return result
+        return result
 
     logger.info(
         "hybrid start session_id={} turn_id={} query_len={} top_k={} hint={} city_code={} lot_code={}",

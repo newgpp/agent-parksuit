@@ -66,6 +66,28 @@ async def test_hybrid_should_not_auto_carry_order_no_from_previous_turn(
 
 
 @pytest.mark.anyio
+async def test_hybrid_should_apply_resolver_chain_without_session_id(
+    rag_async_client: AsyncClient,
+) -> None:
+    resp = await rag_async_client.post(
+        "/api/v1/answer/hybrid",
+        json={
+            "query": "这笔订单金额为什么不一致，帮我核验下",
+            "intent_hint": "fee_verify",
+            "top_k": 3,
+            "doc_type": "rule_explain",
+            "source_type": "biz_derived",
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["business_facts"]["error"] == "missing_order_no"
+    assert "intent_slot_parse:order_reference" in body["graph_trace"]
+    assert "slot_hydrate:none" in body["graph_trace"]
+    assert "react_clarify_gate_async:order_reference" in body["graph_trace"]
+
+
+@pytest.mark.anyio
 async def test_hybrid_should_not_carry_memory_across_sessions(
     rag_async_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
