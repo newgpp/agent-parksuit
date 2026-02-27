@@ -7,7 +7,7 @@ from httpx import AsyncClient
 
 
 @pytest.mark.anyio
-async def test_hybrid_should_carry_order_no_from_previous_turn(
+async def test_hybrid_should_not_auto_carry_order_no_from_previous_turn(
     rag_async_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -16,42 +16,14 @@ async def test_hybrid_should_carry_order_no_from_previous_turn(
         assert city_code == "310100"
         return [{"order_no": "SCN-020", "arrears_amount": "6.00"}]
 
-    async def _fake_get_parking_order(self, order_no: str) -> dict[str, Any]:
-        assert order_no == "SCN-020"
-        return {
-            "order_no": "SCN-020",
-            "billing_rule_code": "SCN-RULE-PERIODIC",
-            "entry_time": "2026-02-01T01:00:00+00:00",
-            "exit_time": "2026-02-01T02:00:00+00:00",
-            "total_amount": "6.00",
-            "paid_amount": "0.00",
-            "arrears_amount": "6.00",
-        }
-
-    async def _fake_simulate_billing(self, rule_code, entry_time, exit_time) -> dict[str, Any]:
-        return {
-            "total_amount": "4.00",
-            "duration_minutes": 60,
-            "matched_version_no": 1,
-            "breakdown": [],
-        }
-
     async def _fake_generate_hybrid_answer(query: str, items: list, business_facts: dict[str, Any], intent: str):
         if intent == "arrears_check":
             return ("存在欠费订单。", ["命中欠费单"], "deepseek-chat")
-        return ("该订单金额不一致。", ["需人工复核"], "deepseek-chat")
+        return ("缺少订单号，无法核验。", ["请提供order_no"], "deepseek-chat")
 
     monkeypatch.setattr(
         "agent_parksuite_rag_core.services.hybrid_answering.BizApiClient.get_arrears_orders",
         _fake_get_arrears_orders,
-    )
-    monkeypatch.setattr(
-        "agent_parksuite_rag_core.services.hybrid_answering.BizApiClient.get_parking_order",
-        _fake_get_parking_order,
-    )
-    monkeypatch.setattr(
-        "agent_parksuite_rag_core.services.hybrid_answering.BizApiClient.simulate_billing",
-        _fake_simulate_billing,
     )
     monkeypatch.setattr(
         "agent_parksuite_rag_core.services.hybrid_answering.generate_hybrid_answer",
@@ -89,8 +61,8 @@ async def test_hybrid_should_carry_order_no_from_previous_turn(
     assert resp2.status_code == 200
     body2 = resp2.json()
     assert body2["session_id"] == "rag009-ses-carry-001"
-    assert body2["business_facts"]["order_no"] == "SCN-020"
-    assert any("memory_hydrate:order_no" in item for item in body2["graph_trace"])
+    assert body2["business_facts"]["error"] == "order_reference_needs_clarification"
+    assert not any("memory_hydrate:order_no" in item for item in body2["graph_trace"])
 
 
 @pytest.mark.anyio

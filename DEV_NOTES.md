@@ -522,5 +522,96 @@
   - latest acceptance result:
     - replay summary `total_turns=12 passed=12 failed=0`
 
+### RAG-010: Slot extraction + short-circuit clarification (ReAct for ambiguous intent)
+- Status: `Planned`
+- Goal:
+  - add a short-circuit pre-processing stage for hybrid requests:
+    - resolve intent + slots in one step
+    - separate deterministic business clarification vs ReAct clarification
+  - keep existing `RAG-005/RAG-009` business workflow stable for clear-intent cases
+- Key requirements:
+  - extract current slot-carry-over logic from `hybrid_answering.py` into a dedicated module
+  - simplify `HybridAnswerRequest`:
+    - keep only minimal user-facing input fields
+    - move executable business parameters to resolver output context
+  - design one-shot prompt so LLM can output:
+    - intent
+    - slot extraction
+    - missing/ambiguous slot judgment
+    - clarification mode decision
+    - tool-use suggestion (structured)
+  - intent-clear clarification should stay in current business flow
+  - intent-ambiguous clarification should be handled by ReAct clarification flow
+  - review memory model and adapt only where needed for clarification continuity
+- Scope boundary:
+  - this phase focuses on clarification routing and slot/intent resolution
+  - no broad dynamic planner, no open-ended multi-hop agent loop
+  - ReAct path is clarification-only and should short-circuit before heavy biz tool chain
+- Short-circuit decision contract (target):
+  - `continue_business`:
+    - intent is clear and required slots are available
+    - continue existing hybrid workflow
+  - `clarify_biz`:
+    - intent is clear but required slots are missing/ambiguous
+    - reuse deterministic business clarification in current flow
+  - `clarify_react`:
+    - intent is ambiguous/conflicting
+    - enter ReAct clarification flow and return clarification question
+  - `fallback_rule`:
+    - LLM/tool failure in pre-stage, fallback to deterministic rule route
+- Proposed module split:
+  - request/execute contract split:
+    - keep external request schema minimal (`session_id/turn_id/query` + optional hints)
+    - introduce internal resolved context (intent + slots + clarify decision) for downstream tools/workflow
+    - preserve backward compatibility in transition window, then deprecate direct business slot fields in request
+  - new service:
+    - `src/agent_parksuite_rag_core/services/intent_slot_resolver.py`
+    - responsibilities:
+      - slot inheritance (from memory)
+      - slot extraction (from current query)
+      - intent resolution + confidence + clarification mode output
+  - new prompt assets:
+    - `src/agent_parksuite_rag_core/prompts/intent_slot_react.md`
+  - `hybrid_answering.py` becomes orchestrator:
+    - call resolver first
+    - short-circuit by resolver decision
+    - keep existing graph for `continue_business`
+- Memory adaptation plan:
+  - keep `SessionMemoryRepo` interface unchanged
+  - extend `SessionMemoryState` with optional clarification context fields:
+    - `pending_clarification`
+    - `clarification_context`
+    - `slot_candidates` (generalized from order-only candidates)
+    - `last_user_confirmed_slots`
+  - persist only structured clarification artifacts; do not persist hidden reasoning text
+- PR split (recommended):
+  - PR-1: pure refactor + contract preparation
+    - move slot inheritance/extraction code to resolver module
+    - add internal resolved context model and adapter from current request
+    - no behavior change
+  - PR-1b: memory simplification cleanup (feature removal)
+    - remove `last_intent` and `order_candidates` from `SessionMemoryState`
+    - remove automatic intent carry-over and candidate-based order reference resolution
+    - keep only deterministic slot carry-over and explicit clarification short-circuit
+  - PR-2: one-shot LLM resolve
+    - add prompt + parser + short-circuit decision object
+    - start shrinking `HybridAnswerRequest` surface (deprecate direct business slot inputs)
+    - wire resolver output into hybrid entry
+  - PR-3: ReAct clarification path
+    - add clarification-only ReAct flow for ambiguous intent
+    - add memory adaptation for pending clarification continuation
+  - PR-4: tests + replay
+    - add integration tests for:
+      - clear intent + missing slot -> `clarify_biz`
+      - ambiguous intent -> `clarify_react`
+      - clear intent + full slots -> `continue_business`
+      - fallback behavior on LLM/tool errors
+- Acceptance:
+  - `HybridAnswerRequest` is minimal and caller-friendly; business execution slots are resolver-owned
+  - clear-intent requests should not introduce extra ReAct latency path
+  - ambiguous-intent requests should return actionable clarification question deterministically
+  - existing hybrid and RAG-009 memory tests keep passing (no regression)
+  - new graph/memory traces clearly show short-circuit decision and clarification source
+
 ## Open items
 - Define and document `rule_payload` schema contract more strictly (JSON Schema / Pydantic typed segments)

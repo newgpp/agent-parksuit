@@ -5,9 +5,9 @@ from typing import Any, Protocol, TypedDict
 
 
 class SessionMemoryState(TypedDict, total=False):
+    # 会话槽位快照（如 city_code/lot_code/plate_no/order_no 等）
     slots: dict[str, Any]
-    last_intent: str
-    order_candidates: list[str]
+    # 近期轮次摘要列表（按时间追加，用于短期上下文追踪）
     turns: list[dict[str, Any]]
 
 
