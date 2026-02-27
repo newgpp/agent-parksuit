@@ -41,6 +41,8 @@ class ResolvedTurnContext:
     clarify_error: str | None = None
     # ReAct澄清链路的消息历史（用于后续多轮续接）
     clarify_messages: list[dict[str, Any]] | None = None
+    # ReAct工具调用轨迹（用于调试/验收）
+    clarify_tool_trace: list[dict[str, Any]] | None = None
 
 
 @dataclass(frozen=True)
@@ -85,6 +87,7 @@ class ClarifyReactDebugResult:
     resolved_slots: dict[str, Any]
     missing_required_slots: list[str]
     trace: list[str]
+    tool_trace: list[dict[str, Any]]
     messages: list[dict[str, Any]]
     parsed_payload: HybridAnswerRequest
     intent: str | None
@@ -339,7 +342,7 @@ async def resolve_turn_context_async(
 ) -> ResolvedTurnContext:
     parse_result = await _intent_slot_parse(payload=payload)
     hydrate_result = _slot_hydrate(parse_result=parse_result, payload=parse_result.payload, memory_state=memory_state)
-    decision, payload_out, clarify_reason, clarify_error, gate_trace, clarify_messages = await react_clarify_gate_async(
+    decision, payload_out, clarify_reason, clarify_error, gate_trace, tool_trace, clarify_messages = await react_clarify_gate_async(
         parse_result=parse_result,
         hydrate_result=hydrate_result,
         memory_state=memory_state,
@@ -354,6 +357,7 @@ async def resolve_turn_context_async(
         clarify_reason=clarify_reason,
         clarify_error=clarify_error,
         clarify_messages=clarify_messages,
+        clarify_tool_trace=tool_trace,
     )
 
 
@@ -371,7 +375,7 @@ async def debug_clarify_react(
 ) -> ClarifyReactDebugResult:
     parse_result = await _intent_slot_parse(payload=payload)
     hydrate_result = _slot_hydrate(parse_result=parse_result, payload=parse_result.payload, memory_state=memory_state)
-    decision, payload_out, clarify_reason, clarify_error, gate_trace, clarify_messages = await react_clarify_gate_async(
+    decision, payload_out, clarify_reason, clarify_error, gate_trace, tool_trace, clarify_messages = await react_clarify_gate_async(
         parse_result=parse_result,
         hydrate_result=hydrate_result,
         memory_state=memory_state,
@@ -394,6 +398,7 @@ async def debug_clarify_react(
         resolved_slots=resolved_slots,
         missing_required_slots=missing_required_slots,
         trace=trace,
+        tool_trace=tool_trace or [],
         messages=clarify_messages or [],
         parsed_payload=payload_out,
         intent=parse_result.intent,

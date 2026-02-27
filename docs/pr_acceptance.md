@@ -434,6 +434,40 @@ curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
 - 当前实现 `tools=[]`，尚未接入 `validate_order_no/validate_plate_no` 等工具。
 - “参数无效触发工具校验”应放到后续 PR（工具接入后）验收。
 
+### E2E（规划）：二次澄清 + 双工具判定订单/停车场
+目标：验证“首轮意图不明确 -> 二轮参数仍模糊 -> 通过两次 tool 调用判定业务路径”。
+
+#### E2E-1 首轮进入 ReAct
+```bash
+curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "RAG010-PR3-E2E-TOOL-001",
+    "query": "这单怎么处理",
+    "required_slots": []
+  }'
+```
+预期：
+- `decision=clarify_react`
+- 返回针对“订单/停车场”的澄清问题
+
+#### E2E-2 二轮参数仍模糊，触发双工具判定
+```bash
+curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "RAG010-PR3-E2E-TOOL-001",
+    "query": "编码是 A-001，帮我看下",
+    "required_slots": []
+  }'
+```
+预期（工具接入后）：
+- `trace` 出现两次工具调用（order lookup + lot lookup）
+- 若仅命中订单：`decision=continue_business` 且后续意图收敛到 `fee_verify`
+- 若仅命中停车场：`decision=continue_business` 且后续意图收敛到 `rule_explain`
+- 若都命中：`decision=clarify_react`，返回“你是要核验订单还是问收费规则？”
+- 若都未命中：`decision=clarify_react`，要求用户补充更明确标识
+
 ### 验收检查点
 - 意图明确缺参时优先规则短路：`clarify_short_circuit`（不进入 ReAct）
 - 意图不明确时进入 ReAct：`clarify_react/clarify_abort`

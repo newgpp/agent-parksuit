@@ -295,6 +295,7 @@ async def debug_clarify_react_route(
             "error": debug_result.clarify_error,
             "missing_required_slots": debug_result.missing_required_slots,
         }
+        new_state["clarify_tool_trace"] = debug_result.tool_trace
         new_state["resolved_slots"] = {
             key: value for key, value in debug_result.resolved_slots.items() if value is not None
         }
@@ -308,6 +309,7 @@ async def debug_clarify_react_route(
         resolved_slots=debug_result.resolved_slots,
         missing_required_slots=debug_result.missing_required_slots,
         trace=debug_result.trace,
+        tool_trace=debug_result.tool_trace,
         messages=debug_result.messages,
         parsed_payload=debug_result.parsed_payload,
     )

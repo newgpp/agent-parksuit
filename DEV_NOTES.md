@@ -650,6 +650,7 @@
 - Clarification tools (initial set):
   - `validate_order_no(order_no, city_code, lot_code)` -> `{valid, canonical_order_no, reason}`
   - `validate_plate_no(plate_no, city_code)` -> `{valid, canonical_plate_no, reason}`
+  - `lookup_order_or_lot(query, candidates)` -> `{order_hit, lot_hit, order_no, lot_code, confidence, reason}`
   - (optional) `suggest_candidates(...)` for weak-match hints
 - Session memory adaptation (interface unchanged, state extended):
   - `clarify_messages`: persisted `system/user/assistant/tool` messages for next-turn replay
@@ -662,6 +663,14 @@
   - persist returned `messages/resolved_slots/pending_clarification`
   - if `ask_user`, return clarification question immediately
   - if `finish_clarify`, merge slots back to payload and continue existing hybrid workflow
+- Ambiguous second-turn resolution (new):
+  - scenario: turn-1 intent ambiguous & no slots -> enter ReAct ask_user
+  - turn-2 user gives ambiguous parameter (could map to order or lot)
+  - ReAct should perform dual lookup tools (order first, then lot or parallel) to disambiguate:
+    - only `order_hit` -> route `fee_verify`
+    - only `lot_hit` -> route `rule_explain`
+    - both hit -> ask a targeted follow-up question
+    - none hit -> ask for clearer identifier
 - Safety and loop controls:
   - configurable `max_clarify_rounds` (default 3)
   - if repeated no-progress rounds -> `clarify_abort`
