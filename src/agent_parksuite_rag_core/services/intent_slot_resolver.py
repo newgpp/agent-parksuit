@@ -22,7 +22,7 @@ _VALID_INTENTS = {"rule_explain", "arrears_check", "fee_verify"}
 _SLOT_KEYS = ("city_code", "lot_code", "plate_no", "order_no", "at_time")
 _MEMORY_HYDRATE_KEYS = ("city_code", "lot_code", "plate_no")
 
-ResolverDecision = Literal["continue_business", "clarify_biz", "clarify_react", "clarify_abort"]
+ResolverDecision = Literal["continue_business", "clarify_short_circuit", "clarify_react", "clarify_abort"]
 FieldSource = Literal["user", "memory", "inferred"]
 
 

@@ -25,7 +25,7 @@ def test_resolve_turn_context_should_short_circuit_when_order_reference_ambiguou
     payload = HybridAnswerRequest(query="这笔订单帮我核验下")
     memory_state = {"slots": {"city_code": "310100"}}
     resolved = resolve_turn_context(payload=payload, memory_state=memory_state)
-    assert resolved.decision == "clarify_biz"
+    assert resolved.decision == "clarify_short_circuit"
     assert resolved.clarify_error == "order_reference_needs_clarification"
     assert resolved.clarify_reason is not None
     assert "react_clarify_gate:order_reference" in resolved.memory_trace

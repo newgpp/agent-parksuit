@@ -312,7 +312,7 @@ curl -X POST "http://127.0.0.1:8002/api/v1/debug/intent-slot-parse" \
   - `llm[intent_slot_parse] parse_result=...`
 
 ## 6. RAG-010 PR-3 调试验收：ReAct 澄清循环（Debug API）
-目标：仅验证 resolver 的 ReAct 澄清链路（不进入 hybrid 重业务执行），用于确认多轮澄清历史与工具校验行为。
+目标：仅验证 resolver 的 Step-3 澄清决策链路（规则短路 + ReAct），不进入 hybrid 重业务执行。
 
 ### 前置条件
 - `rag-core` 已启动：`http://127.0.0.1:8002`
@@ -328,14 +328,14 @@ curl -X POST "http://127.0.0.1:8002/api/v1/debug/intent-slot-parse" \
   - `required_slots`: 可选，当前意图的必填槽位
   - `max_rounds`: 可选，默认3
 - 返回（建议）：
-  - `decision`: `clarify_react|continue_business|clarify_abort`
+  - `decision`: `clarify_short_circuit|clarify_react|continue_business|clarify_abort`
   - `clarify_question`: 当前要反问用户的问题
   - `resolved_slots`: 当前已收敛槽位
   - `missing_required_slots`: 当前仍缺失槽位
   - `trace`: 调试轨迹
-  - `messages`: 当前累计消息（用于确认历史连续）
+  - `messages`: 当前累计消息（仅进入 ReAct 时有值）
 
-### 用例A：首轮缺参触发澄清
+### 用例A：意图明确 + 缺必填（规则短路）
 ```bash
 curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
   -H "Content-Type: application/json" \
@@ -347,10 +347,11 @@ curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
   }'
 ```
 预期：
-- `decision=clarify_react`
+- `decision=clarify_short_circuit`
 - `clarify_question` 非空（明确索要 `order_no`）
+- `trace` 包含 `react_clarify_gate_async:short_circuit:*`
 
-### 用例B：同会话补参后继续
+### 用例B：同会话补参后继续（规则短路收敛）
 ```bash
 curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
   -H "Content-Type: application/json" \
@@ -362,30 +363,43 @@ curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
   }'
 ```
 预期：
-- `messages` 包含上一轮问答历史（非空且增长）
 - `resolved_slots.order_no=SCN-020`（或 canonical 值）
-- `decision` 可转为 `continue_business`（若校验通过）
+- `missing_required_slots=[]`
+- `decision=continue_business`
 
-### 用例C：参数无效触发工具校验后再澄清
+### 用例C：意图不明确触发 ReAct
 ```bash
 curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
   -H "Content-Type: application/json" \
   -d '{
-    "session_id": "RAG010-PR3-DBG-002",
-    "query": "订单号是 SCN-999",
-    "intent": "fee_verify",
-    "required_slots": ["order_no"]
+    "session_id": "RAG010-PR3-DBG-003",
+    "query": "这单怎么处理",
+    "required_slots": []
   }'
 ```
 预期：
-- 保持 `decision=clarify_react`（或最终 `clarify_abort`）
-- `clarify_question` 明确提示参数无效并要求重新提供
+- `decision` 为 `clarify_react`（或 `clarify_abort`）
+- `messages` 非空（进入 ReAct 链路后才会累计）
+
+### 用例D：ReAct 异常兜底（需测试桩/故障注入）
+说明：该用例用于验证 LLM/ReAct 调用失败时的统一 fallback。
+预期：
+- `decision=clarify_short_circuit`
+- `clarify_error=clarify_fallback`
+- `trace` 包含 `react_clarify_gate_async:fallback:react_error`
+
+### 说明：工具校验场景
+- 当前实现 `tools=[]`，尚未接入 `validate_order_no/validate_plate_no` 等工具。
+- “参数无效触发工具校验”应放到后续 PR（工具接入后）验收。
 
 ### 验收检查点
-- 同一 `session_id` 下 `messages` 连续累积，支持多轮澄清回放
-- 决策符合：`clarify_react -> continue_business` 或 `clarify_abort`
-- 必填槽位与工具校验未通过前，不应返回“可执行业务”结论
+- 意图明确缺参时优先规则短路：`clarify_short_circuit`（不进入 ReAct）
+- 意图不明确时进入 ReAct：`clarify_react/clarify_abort`
+- `resolved_slots.order_no=SCN-020`（或 canonical 值）
+- 同一 `session_id` 下，进入 ReAct 的请求应可观察 `messages` 连续累积
+- 缺参补齐后可转为 `continue_business`
 - 日志可观测：
+  - `react_clarify_gate_async:short_circuit:*`
   - `clarify_react:start`
   - `clarify_react:agent:*`
   - `clarify_react result decision=...`

@@ -164,7 +164,7 @@ async def run_hybrid_answering(
         resolved = await resolve_turn_context_async(payload=payload, memory_state=memory_state)
         payload = resolved.payload
         memory_trace = resolved.memory_trace
-        if resolved.decision in {"clarify_biz", "clarify_react", "clarify_abort"} and resolved.clarify_reason:
+        if resolved.decision in {"clarify_short_circuit", "clarify_react", "clarify_abort"} and resolved.clarify_reason:
             clarified_intent = payload.intent_hint or ""
             clarify_error = resolved.clarify_error or "clarification_required"
             key_points = ["请提供明确的订单号（order_no），例如 SCN-020。"]
