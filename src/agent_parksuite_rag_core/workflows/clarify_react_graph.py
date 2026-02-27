@@ -29,7 +29,6 @@ class ClarifyReactResult(TypedDict, total=False):
     missing_required_slots: list[str]
     trace: list[str]
     messages: list[BaseMessage]
-    tool_trace: list[dict[str, Any]]
 
 
 class ClarifyGraphState(TypedDict, total=False):
@@ -90,20 +89,6 @@ def _merge_slots_from_payload(payload: HybridAnswerRequest) -> dict[str, Any]:
     }
 
 
-def _extract_tool_trace(messages: list[BaseMessage]) -> list[dict[str, Any]]:
-    trace: list[dict[str, Any]] = []
-    for message in messages:
-        if getattr(message, "type", "") != "tool":
-            continue
-        trace.append(
-            {
-                "tool_call_id": str(getattr(message, "tool_call_id", "")),
-                "content": str(getattr(message, "content", "")),
-            }
-        )
-    return trace
-
-
 def build_clarify_react_app(
     *,
     llm_factory: LLMFactory,
@@ -137,7 +122,6 @@ def _build_clarify_result(
     required_slots: list[str],
     trace: list[str],
     final_messages: list[BaseMessage],
-    tool_trace: list[dict[str, Any]],
 ) -> ClarifyReactResult:
     return {
         "decision": decision,
@@ -146,7 +130,6 @@ def _build_clarify_result(
         "missing_required_slots": _missing_slots(required_slots, resolved_slots),
         "trace": trace,
         "messages": final_messages,
-        "tool_trace": tool_trace,
     }
 
 
@@ -216,7 +199,6 @@ async def run_clarify_react_once(
     )
     trace: list[str] = ["clarify_react:start", "clarify_react:agent:create_react_agent"]
     final_messages = await _invoke_clarify_agent(app=app, messages=messages, max_rounds=max_rounds)
-    tool_trace = _extract_tool_trace(final_messages)
     logger.info(
         "clarify_react agent_done final_messages={} recursion_limit={}",
         len(final_messages),
@@ -230,9 +212,8 @@ async def run_clarify_react_once(
         trace.append("clarify_react:parse:fallback_ask_user")
         trace.append("clarify_react:agent:ask_user")
         logger.info(
-            "clarify_react parse_result=fallback_ask_user question_len={} tool_calls={}",
+            "clarify_react parse_result=fallback_ask_user question_len={}",
             len(question),
-            len(tool_trace),
         )
         return _build_clarify_result(
             decision="clarify_react",
@@ -241,7 +222,6 @@ async def run_clarify_react_once(
             required_slots=required_slots,
             trace=trace,
             final_messages=final_messages,
-            tool_trace=tool_trace,
         )
 
     action, decision, clarify_question, missing_required_slots, slot_update_keys = _normalize_action_and_slots(
@@ -257,13 +237,12 @@ async def run_clarify_react_once(
         trace.append("clarify_react:agent:abort")
 
     logger.info(
-        "clarify_react result action={} decision={} slot_updates_keys={} missing_required_slots={} rounds={} tool_calls={}",
+        "clarify_react result action={} decision={} slot_updates_keys={} missing_required_slots={} rounds={}",
         action,
         decision,
         slot_update_keys,
         missing_required_slots,
         max_rounds,
-        len(tool_trace),
     )
     return _build_clarify_result(
         decision=decision,
@@ -272,5 +251,4 @@ async def run_clarify_react_once(
         required_slots=required_slots,
         trace=trace,
         final_messages=final_messages,
-        tool_trace=tool_trace,
     )

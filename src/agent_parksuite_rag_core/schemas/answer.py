@@ -102,6 +102,5 @@ class ClarifyReactDebugResponse(BaseModel):
     resolved_slots: dict[str, Any] = Field(default_factory=dict, description="当前槽位快照")
     missing_required_slots: list[str] = Field(default_factory=list, description="当前仍缺失的必填槽位")
     trace: list[str] = Field(default_factory=list, description="调试轨迹")
-    tool_trace: list[dict[str, Any]] = Field(default_factory=list, description="ReAct工具调用轨迹")
     messages: list[dict[str, Any]] = Field(default_factory=list, description="ReAct累计消息历史")
     parsed_payload: HybridAnswerRequest = Field(description="ReAct后请求对象")

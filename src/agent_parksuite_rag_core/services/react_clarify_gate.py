@@ -26,7 +26,6 @@ class ReactClarifyGateResult:
     clarify_reason: str | None
     clarify_error: str | None
     trace: list[str]
-    tool_trace: list[dict[str, Any]]
     clarify_messages: list[dict[str, Any]] | None
 
 
@@ -54,7 +53,6 @@ def _short_circuit_if_possible(parse_result: Any, hydrate_result: Any, trace: li
             clarify_reason="请提供要核验的订单号（order_no，例如 SCN-020）。",
             clarify_error="missing_order_no",
             trace=[*trace, "react_clarify_gate_async:short_circuit:missing_order_no"],
-            tool_trace=[],
             clarify_messages=None,
         )
     if "plate_no" in missing:
@@ -64,7 +62,6 @@ def _short_circuit_if_possible(parse_result: Any, hydrate_result: Any, trace: li
             clarify_reason="请提供要查询欠费的车牌号（plate_no，例如 沪A12345）。",
             clarify_error="missing_plate_no",
             trace=[*trace, "react_clarify_gate_async:short_circuit:missing_plate_no"],
-            tool_trace=[],
             clarify_messages=None,
         )
     return ReactClarifyGateResult(
@@ -73,7 +70,6 @@ def _short_circuit_if_possible(parse_result: Any, hydrate_result: Any, trace: li
         clarify_reason="请补充必要信息后继续。",
         clarify_error="missing_required_slots",
         trace=[*trace, "react_clarify_gate_async:short_circuit:missing_required_slots"],
-        tool_trace=[],
         clarify_messages=None,
     )
 
@@ -112,7 +108,6 @@ async def _invoke_react_once(
             clarify_reason="当前澄清流程暂不可用，请补充必要信息后继续。",
             clarify_error="clarify_fallback",
             trace=[*trace, "react_clarify_gate_async:fallback:react_error"],
-            tool_trace=[],
             clarify_messages=None,
         )
     return clarify_result, None
@@ -124,11 +119,9 @@ def _normalize_react_result(
     hydrate_result: Any,
     trace: list[str],
     react_result: ClarifyResult,
-    include_debug_trace: bool,
 ) -> ReactClarifyGateResult:
     react_decision = react_result.decision
     react_messages = react_result.messages
-    react_tool_trace = react_result.tool_trace if include_debug_trace else []
     react_trace = react_result.trace
     merged_payload = hydrate_result.payload.model_copy(update=dict(react_result.resolved_slots))
     react_missing = list(react_result.missing_required_slots)
@@ -140,7 +133,6 @@ def _normalize_react_result(
             clarify_reason=react_result.clarify_question or "请先确认你的问题类型：规则解释、欠费查询，还是订单金额核验？",
             clarify_error="missing_intent",
             trace=[*trace, *react_trace, "react_clarify_gate_async:pending_intent"],
-            tool_trace=react_tool_trace,
             clarify_messages=react_messages,
         )
     if react_decision == "continue_business" and not react_missing:
@@ -150,7 +142,6 @@ def _normalize_react_result(
             clarify_reason=None,
             clarify_error=None,
             trace=[*trace, *react_trace, "react_clarify_gate_async:continue_business"],
-            tool_trace=react_tool_trace,
             clarify_messages=react_messages,
         )
     if react_decision == "clarify_abort":
@@ -160,7 +151,6 @@ def _normalize_react_result(
             clarify_reason=react_result.clarify_question or "当前信息仍不足以继续，请补充关键信息后重试。",
             clarify_error="clarify_abort",
             trace=[*trace, *react_trace, "react_clarify_gate_async:abort"],
-            tool_trace=react_tool_trace,
             clarify_messages=react_messages,
         )
     return ReactClarifyGateResult(
@@ -169,7 +159,6 @@ def _normalize_react_result(
         clarify_reason=react_result.clarify_question or "请补充必要信息后继续。",
         clarify_error="clarify_react_required",
         trace=[*trace, *react_trace, "react_clarify_gate_async:clarify_react"],
-        tool_trace=react_tool_trace,
         clarify_messages=react_messages,
     )
 
@@ -184,7 +173,6 @@ async def react_clarify_gate_async(
     required_slots_override: list[str] | None = None,
     max_rounds: int = 3,
     clarify_agent: ClarifyAgent | None = None,
-    include_debug_trace: bool = False,
 ) -> ReactClarifyGateResult:
     # Step-3: react_clarify_gate
     # ReAct澄清编排阶段：当 Step-1/Step-2 仍无法收敛时进入，
@@ -199,7 +187,6 @@ async def react_clarify_gate_async(
             clarify_reason=None,
             clarify_error=None,
             trace=(trace or ["react_clarify_gate_async:pass"]),
-            tool_trace=[],
             clarify_messages=None,
         )
 
@@ -226,7 +213,6 @@ async def react_clarify_gate_async(
         parse_result=parse_result,
         hydrate_result=hydrate_result,
         trace=trace,
-        include_debug_trace=include_debug_trace,
         react_result=react_result
         or ClarifyResult(
             decision="clarify_react",
@@ -235,6 +221,5 @@ async def react_clarify_gate_async(
             missing_required_slots=[],
             trace=[],
             messages=[],
-            tool_trace=[],
         ),
     )

@@ -96,7 +96,6 @@ class ClarifyReactDebugResult:
     resolved_slots: dict[str, Any]
     missing_required_slots: list[str]
     trace: list[str]
-    tool_trace: list[dict[str, Any]]
     messages: list[dict[str, Any]]
     parsed_payload: HybridAnswerRequest
     intent: str | None
@@ -412,7 +411,6 @@ async def debug_clarify_react(
         required_slots_for_intent=_required_slots_for_intent,
         required_slots_override=required_slots,
         max_rounds=max_rounds,
-        include_debug_trace=True,
     )
     payload_out = gate_result.payload
     if parse_result.intent in _VALID_INTENTS:
@@ -431,7 +429,6 @@ async def debug_clarify_react(
         resolved_slots=resolved_slots,
         missing_required_slots=missing_required_slots,
         trace=trace,
-        tool_trace=gate_result.tool_trace or [],
         messages=gate_result.clarify_messages or [],
         parsed_payload=payload_out,
         intent=parse_result.intent,

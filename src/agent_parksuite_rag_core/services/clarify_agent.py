@@ -30,7 +30,6 @@ class ClarifyResult:
     missing_required_slots: list[str]
     trace: list[str]
     messages: list[dict[str, Any]] | None
-    tool_trace: list[dict[str, Any]]
 
 
 class ClarifyAgent(Protocol):
@@ -106,5 +105,4 @@ class ReActClarifyAgent:
             missing_required_slots=list(react_result.get("missing_required_slots", [])),
             trace=list(react_result.get("trace", [])),
             messages=serialized_messages,
-            tool_trace=list(react_result.get("tool_trace", [])),
         )
