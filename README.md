@@ -34,21 +34,38 @@
 ### `/api/v1/answer/hybrid` Flow
 ```mermaid
 flowchart TD
-    A[POST /api/v1/answer/hybrid] --> M[memory_hydrate<br/>slot carry + reference resolve]
-    M --> N[intent_slot_parse + slot_hydrate + react_clarify_gate]
-    N -->|clarification required| X[clarify response]
-    N -->|continue_business| B[intent_classifier<br/>resolver intent authority]
-    B -->|rule_explain| C[rule_explain_flow]
-    B -->|arrears_check| D[arrears_check_flow]
-    B -->|fee_verify| E[fee_verify_flow]
+    A["POST /api/v1/answer/hybrid"] --> M["load_session_memory<br/>if session_id"]
+    M --> P1["intent_slot_parse<br/>意图判断 + 槽位提取"]
+    P1 --> P2["slot_hydrate<br/>槽位继承"]
+    P2 --> GATE["react_clarify_gate"]
 
-    C --> F[rag_retrieve]
+    subgraph SA["Clarify Sub-Agent (ReAct)"]
+      R0["run_clarify_task"]
+      R1["ask_user"]
+      R2["finish_clarify"]
+      R3["abort"]
+      R0 --> R1
+      R0 --> R2
+      R0 --> R3
+    end
+
+    GATE -->|clarify_short_circuit| X["clarify response"]
+    GATE -->|enter_react| SA
+    SA -->|ask_user_or_abort| X
+    SA -->|finish_clarify_ready| B["intent_router<br/>prefer resolver intent, fallback rule_explain"]
+    SA -->|finish_clarify_not_converged| X
+    GATE -->|continue_business| B
+    B -->|rule_explain| C["rule_explain_flow"]
+    B -->|arrears_check| D["arrears_check_flow"]
+    B -->|fee_verify| E["fee_verify_flow"]
+
+    C --> F["rag_retrieve"]
     E --> F
-    D --> G[answer_synthesizer]
-    F --> G
-    G --> P[memory_persist]
-    X --> P
-    P --> H[HybridAnswerResponse]
+    D --> SYN["answer_synthesizer"]
+    F --> SYN
+    SYN --> MP["memory_persist"]
+    X --> MP
+    MP --> H["HybridAnswerResponse"]
 ```
 
 ### Biz API
