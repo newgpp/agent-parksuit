@@ -137,7 +137,6 @@ async def run_hybrid_answering(
                 "intent": clarified_intent,
                 "error": clarify_error,
                 "clarify_messages": resolved.clarify_messages or [],
-                "clarify_tool_trace": resolved.clarify_tool_trace or [],
                 "pending_clarification": {
                     "decision": resolved.decision,
                     "error": clarify_error,

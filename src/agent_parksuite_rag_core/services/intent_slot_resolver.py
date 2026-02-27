@@ -41,8 +41,6 @@ class ResolvedTurnContext:
     clarify_error: str | None = None
     # ReAct澄清链路的消息历史（用于后续多轮续接）
     clarify_messages: list[dict[str, Any]] | None = None
-    # ReAct工具调用轨迹（用于调试/验收）
-    clarify_tool_trace: list[dict[str, Any]] | None = None
     # resolver 阶段产出的最终意图（作为下游业务流的单一意图来源）
     resolved_intent: str | None = None
     # 内部执行上下文（后续用于替代直接依赖大请求对象）
@@ -387,7 +385,6 @@ async def resolve_turn_context_async(
         clarify_reason=gate_result.clarify_reason,
         clarify_error=gate_result.clarify_error,
         clarify_messages=gate_result.clarify_messages,
-        clarify_tool_trace=gate_result.tool_trace,
         resolved_intent=parse_result.intent if parse_result.intent in _VALID_INTENTS else None,
         execution_context=execution_context,
     )
