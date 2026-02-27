@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 import re
+import json
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from agent_parksuite_common.llm_payload import dump_llm_input, dump_llm_output, trim_llm_payload_text
+from langchain_core.messages import HumanMessage, SystemMessage
+from loguru import logger
+
+from agent_parksuite_rag_core.clients.llm_client import get_chat_llm
+from agent_parksuite_rag_core.config import settings
 from agent_parksuite_rag_core.schemas.answer import HybridAnswerRequest
 from agent_parksuite_rag_core.services.memory import SessionMemoryState
 
@@ -20,29 +27,51 @@ FieldSource = Literal["user", "memory", "inferred"]
 
 @dataclass(frozen=True)
 class ResolvedTurnContext:
+    """Resolver最终输出：用于驱动后续是继续业务流还是先澄清。"""
+
+    # 经过解析/补槽后的请求对象（供后续Hybrid执行或澄清返回使用）
     payload: HybridAnswerRequest
+    # 决策结果：继续业务流或先走业务澄清
     decision: ResolverDecision
+    # 解析阶段轨迹（便于排障与审计）
     memory_trace: list[str]
+    # 需要澄清时返回给用户的问题文本；可为空表示无需澄清
     clarify_reason: str | None
+    # 需要澄清时的结构化错误码
     clarify_error: str | None = None
 
 
 @dataclass(frozen=True)
 class IntentSlotParseResult:
+    """阶段1产物：意图与槽位初步解析结果。"""
+
+    # 解析后（含可能从query抽取槽位）的请求对象
     payload: HybridAnswerRequest
+    # 识别到的意图；None表示当前无法确定
     intent: str | None
+    # 意图置信度（可选）
     intent_confidence: float | None
+    # 槽位来源标记：user/memory/inferred
     field_sources: dict[str, FieldSource]
+    # 基于当前意图判断的必填缺失槽位
     missing_required_slots: list[str]
+    # 解析出的歧义列表（如订单指代歧义）
     ambiguities: list[str]
+    # 本阶段轨迹
     trace: list[str]
 
 
 @dataclass(frozen=True)
 class SlotHydrateResult:
+    """阶段2产物：结合会话记忆补槽后的结果。"""
+
+    # 补槽后的请求对象
     payload: HybridAnswerRequest
+    # 补槽后字段来源标记
     field_sources: dict[str, FieldSource]
+    # 补槽后仍缺失的必填槽位
     missing_required_slots: list[str]
+    # 本阶段轨迹
     trace: list[str]
 
 
@@ -87,12 +116,10 @@ def _build_field_sources(payload: HybridAnswerRequest) -> dict[str, FieldSource]
     return sources
 
 
-def _intent_slot_parse(
+def _intent_slot_parse_deterministic(
     payload: HybridAnswerRequest,
 ) -> IntentSlotParseResult:
-    # Step-1: intent_slot_parse
-    # 当前阶段使用确定性占位实现，后续将替换为一次LLM调用，
-    # 统一输出 intent + 槽位抽取 + 缺参/歧义信号。
+    # Deterministic fallback parser used when LLM is unavailable or failed.
     trace = ["intent_slot_parse:deterministic"]
     updates: dict[str, Any] = {}
     field_sources = _build_field_sources(payload)
@@ -124,6 +151,142 @@ def _intent_slot_parse(
         missing_required_slots=missing_required_slots,
         ambiguities=ambiguities,
         trace=trace,
+    )
+
+
+def _extract_json_payload(text: str) -> dict[str, Any] | None:
+    content = text.strip()
+    if content.startswith("```"):
+        lines = content.splitlines()
+        if len(lines) >= 3:
+            content = "\n".join(lines[1:-1]).strip()
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+async def _intent_slot_parse(payload: HybridAnswerRequest) -> IntentSlotParseResult:
+    # Step-1: intent_slot_parse (real LLM call + deterministic fallback)
+    # 主路径：一次LLM调用统一输出 intent + 槽位抽取 + 缺参/歧义信号；
+    # 回退：LLM不可用/输出异常时使用确定性解析。
+    deterministic = _intent_slot_parse_deterministic(payload)
+    if deterministic.intent in _VALID_INTENTS:
+        return deterministic
+    if not settings.deepseek_api_key:
+        return IntentSlotParseResult(
+            payload=deterministic.payload,
+            intent=deterministic.intent,
+            intent_confidence=deterministic.intent_confidence,
+            field_sources=deterministic.field_sources,
+            missing_required_slots=deterministic.missing_required_slots,
+            ambiguities=deterministic.ambiguities,
+            trace=[*deterministic.trace, "intent_slot_parse:llm_skip:no_api_key"],
+        )
+
+    llm = get_chat_llm(temperature=0, timeout_seconds=8)
+    messages = [
+        SystemMessage(
+            content=(
+                "你是停车业务意图和槽位解析器。"
+                '请只输出JSON，格式: {"intent":"rule_explain|arrears_check|fee_verify|unknown",'
+                '"intent_confidence":0~1,"slots":{"order_no":string|null,"plate_no":string|null,'
+                '"city_code":string|null,"lot_code":string|null},"ambiguities":[string,...]}。'
+            )
+        ),
+        HumanMessage(content=f"用户问题: {payload.query}"),
+    ]
+    logger.info(
+        "llm[intent_slot_parse] input query={} hint={} model={}",
+        payload.query[:200],
+        payload.intent_hint,
+        settings.deepseek_model,
+    )
+    logger.info(
+        "llm[intent_slot_parse] input_payload={}",
+        trim_llm_payload_text(
+            dump_llm_input(messages=messages, model=settings.deepseek_model, temperature=0),
+            full_payload=settings.llm_log_full_payload,
+            max_chars=settings.llm_log_max_chars,
+        ),
+    )
+    try:
+        result = await llm.ainvoke(messages)
+    except Exception as exc:
+        logger.warning("intent_slot_parse llm_error fallback=deterministic error={}", exc.__class__.__name__)
+        return IntentSlotParseResult(
+            payload=deterministic.payload,
+            intent=deterministic.intent,
+            intent_confidence=deterministic.intent_confidence,
+            field_sources=deterministic.field_sources,
+            missing_required_slots=deterministic.missing_required_slots,
+            ambiguities=deterministic.ambiguities,
+            trace=[*deterministic.trace, "intent_slot_parse:llm_error_fallback"],
+        )
+    raw_text = str(result.content)
+    logger.info(
+        "llm[intent_slot_parse] output_payload={}",
+        trim_llm_payload_text(
+            dump_llm_output(result=result, model=settings.deepseek_model, temperature=0),
+            full_payload=settings.llm_log_full_payload,
+            max_chars=settings.llm_log_max_chars,
+        ),
+    )
+    parsed = _extract_json_payload(raw_text)
+    if not parsed:
+        logger.info("llm[intent_slot_parse] parse_result=invalid_json fallback=deterministic")
+        return IntentSlotParseResult(
+            payload=deterministic.payload,
+            intent=deterministic.intent,
+            intent_confidence=deterministic.intent_confidence,
+            field_sources=deterministic.field_sources,
+            missing_required_slots=deterministic.missing_required_slots,
+            ambiguities=deterministic.ambiguities,
+            trace=[*deterministic.trace, "intent_slot_parse:llm_invalid_json_fallback"],
+        )
+
+    llm_intent = str(parsed.get("intent", "")).strip()
+    intent = llm_intent if llm_intent in _VALID_INTENTS else deterministic.intent
+    intent_conf = parsed.get("intent_confidence", deterministic.intent_confidence)
+    try:
+        intent_confidence = float(intent_conf) if intent_conf is not None else deterministic.intent_confidence
+    except Exception:
+        intent_confidence = deterministic.intent_confidence
+
+    field_sources = dict(deterministic.field_sources)
+    updates: dict[str, Any] = {}
+    slots_obj = parsed.get("slots", {})
+    if isinstance(slots_obj, dict):
+        for key in ("order_no", "plate_no", "city_code", "lot_code"):
+            if getattr(deterministic.payload, key) is None and slots_obj.get(key):
+                updates[key] = str(slots_obj.get(key))
+                field_sources[key] = "inferred"
+    merged_payload = deterministic.payload.model_copy(update=updates) if updates else deterministic.payload
+
+    ambiguities = list(deterministic.ambiguities)
+    llm_ambiguities = parsed.get("ambiguities", [])
+    if isinstance(llm_ambiguities, list):
+        for item in llm_ambiguities:
+            label = str(item).strip()
+            if label and label not in ambiguities:
+                ambiguities.append(label)
+
+    missing_required_slots = [slot for slot in _required_slots_for_intent(intent) if getattr(merged_payload, slot) is None]
+    logger.info(
+        "llm[intent_slot_parse] parse_result=json intent={} missing_required_slots={} ambiguities={}",
+        intent,
+        missing_required_slots,
+        ambiguities,
+    )
+    return IntentSlotParseResult(
+        payload=merged_payload,
+        intent=intent,
+        intent_confidence=intent_confidence,
+        field_sources=field_sources,
+        missing_required_slots=missing_required_slots,
+        ambiguities=ambiguities,
+        trace=[*deterministic.trace, "intent_slot_parse:llm"],
     )
 
 
@@ -219,7 +382,7 @@ def resolve_turn_context(
 ) -> ResolvedTurnContext:
     # Resolver 主入口：固定编排三阶段
     # intent_slot_parse -> slot_hydrate -> react_clarify_gate
-    parse_result = _intent_slot_parse(payload=payload)
+    parse_result = _intent_slot_parse_deterministic(payload=payload)
     hydrate_result = _slot_hydrate(parse_result=parse_result, payload=parse_result.payload, memory_state=memory_state)
     clarify_reason, clarify_error, gate_trace = _react_clarify_gate(
         parse_result=parse_result,
@@ -234,3 +397,29 @@ def resolve_turn_context(
         clarify_reason=clarify_reason,
         clarify_error=clarify_error,
     )
+
+
+async def resolve_turn_context_async(
+    payload: HybridAnswerRequest,
+    memory_state: SessionMemoryState | None,
+) -> ResolvedTurnContext:
+    parse_result = await _intent_slot_parse(payload=payload)
+    hydrate_result = _slot_hydrate(parse_result=parse_result, payload=parse_result.payload, memory_state=memory_state)
+    clarify_reason, clarify_error, gate_trace = _react_clarify_gate(
+        parse_result=parse_result,
+        hydrate_result=hydrate_result,
+    )
+    trace = [*parse_result.trace, *hydrate_result.trace, *gate_trace]
+    decision: ResolverDecision = "clarify_biz" if clarify_reason else "continue_business"
+    return ResolvedTurnContext(
+        payload=hydrate_result.payload,
+        decision=decision,
+        memory_trace=trace,
+        clarify_reason=clarify_reason,
+        clarify_error=clarify_error,
+    )
+
+
+async def debug_intent_slot_parse(payload: HybridAnswerRequest) -> IntentSlotParseResult:
+    """Debug helper: run only resolver step-1 intent/slot parse."""
+    return await _intent_slot_parse(payload=payload)
