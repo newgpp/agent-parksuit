@@ -191,12 +191,25 @@ def _react_clarify_gate(
             "order_reference_needs_clarification",
             trace,
         )
+    if hydrate_result.missing_required_slots:
+        missing = hydrate_result.missing_required_slots
+        trace.append(f"react_clarify_gate:missing_required_slots:{','.join(missing)}")
+        if "order_no" in missing:
+            return (
+                "请提供要核验的订单号（order_no，例如 SCN-020）。",
+                "missing_order_no",
+                trace,
+            )
+        if "plate_no" in missing:
+            return (
+                "请提供要查询欠费的车牌号（plate_no，例如 沪A12345）。",
+                "missing_plate_no",
+                trace,
+            )
+        return ("请补充必要信息后继续。", "missing_required_slots", trace)
     if parse_result.intent is None:
         # PR-1框架阶段: 仅记录状态，继续沿用现有意图分类链路，不做短路。
         trace.append("react_clarify_gate:pending_intent_passthrough")
-    if hydrate_result.missing_required_slots:
-        # PR-1框架阶段: 仅记录状态，继续沿用现有业务链路错误处理，不做短路。
-        trace.append("react_clarify_gate:missing_required_slots_passthrough")
     return None, None, trace or ["react_clarify_gate:pass"]
 
 

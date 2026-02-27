@@ -118,5 +118,49 @@ async def test_hybrid_should_not_carry_memory_across_sessions(
     assert resp2.status_code == 200
     body2 = resp2.json()
     assert body2["session_id"] == "rag009-ses-iso-B"
-    assert body2["business_facts"]["error"] == "order_no is required for fee_verify"
-    assert "memory_hydrate:none" in body2["graph_trace"]
+    assert body2["business_facts"]["error"] == "order_reference_needs_clarification"
+    assert "slot_hydrate:none" in body2["graph_trace"]
+    assert "react_clarify_gate:order_reference" in body2["graph_trace"]
+
+
+@pytest.mark.anyio
+async def test_hybrid_should_short_circuit_when_arrears_check_missing_plate_no(
+    rag_async_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called = {"arrears_called": False}
+
+    async def _fake_get_arrears_orders(self, plate_no: str | None, city_code: str | None) -> list[dict[str, Any]]:
+        called["arrears_called"] = True
+        return []
+
+    async def _fake_generate_hybrid_answer(query: str, items: list, business_facts: dict[str, Any], intent: str):
+        return ("占位", [], "deepseek-chat")
+
+    monkeypatch.setattr(
+        "agent_parksuite_rag_core.services.hybrid_answering.BizApiClient.get_arrears_orders",
+        _fake_get_arrears_orders,
+    )
+    monkeypatch.setattr(
+        "agent_parksuite_rag_core.services.hybrid_answering.generate_hybrid_answer",
+        _fake_generate_hybrid_answer,
+    )
+
+    resp = await rag_async_client.post(
+        "/api/v1/answer/hybrid",
+        json={
+            "session_id": "rag010-ses-missing-plate-001",
+            "turn_id": "t1",
+            "query": "帮我查下有没有欠费",
+            "intent_hint": "arrears_check",
+            "top_k": 3,
+            "doc_type": "rule_explain",
+            "source_type": "biz_derived",
+            "city_code": "310100",
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["business_facts"]["error"] == "missing_plate_no"
+    assert "react_clarify_gate:missing_required_slots:plate_no" in body["graph_trace"]
+    assert called["arrears_called"] is False

@@ -522,7 +522,7 @@
     - replay summary `total_turns=12 passed=12 failed=0`
 
 ### RAG-010: Slot extraction + short-circuit clarification (ReAct for ambiguous intent)
-- Status: `Planned`
+- Status: `In Progress` (resolver baseline + deterministic missing-slot short-circuit)
 - Goal:
   - add a short-circuit pre-processing stage for hybrid requests:
     - resolve intent + slots in one step
@@ -615,6 +615,13 @@
   - ambiguous-intent requests should return actionable clarification question deterministically
   - existing hybrid and RAG-009 memory tests keep passing (no regression)
   - new graph/memory traces clearly show short-circuit decision and clarification source
+- Implemented (current):
+  - `intent_slot_resolver` deterministic pipeline wired in:
+    - `intent_slot_parse -> slot_hydrate -> react_clarify_gate`
+  - missing required slot now short-circuits in resolver gate:
+    - `fee_verify` missing `order_no` -> `clarify_biz`
+    - `arrears_check` missing `plate_no` -> `clarify_biz`
+  - route keeps backward-compatible response schema; short-circuit surfaced via `business_facts.error`
 
 ## Open items
 - Define and document `rule_payload` schema contract more strictly (JSON Schema / Pydantic typed segments)
