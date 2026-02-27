@@ -8,30 +8,7 @@
 - 可观测性到位：`X-Trace-Id` 跨服务透传、结构化日志、`graph_trace` 可追踪执行分支。
 - 多轮短期记忆与澄清子Agent已落地（`RAG-009` + `RAG-011`）：支持槽位继承、ReAct澄清、会话续接，且澄清过程数据与业务返回解耦。
 
-## System Architecture
-- `agent_parksuite_biz_api`:
-  - 计费规则配置与版本管理
-  - 停车订单与欠费查询
-  - 计费模拟
-- `agent_parksuite_rag_core`:
-  - 知识源/知识分块存储
-  - 检索与回答接口
-  - Hybrid 编排（LangGraph + biz tools）
-- `agent_parksuite_eval`:
-  - 评测数据集（RAG-006）
-  - 评测回放脚本与报告
-
-## Eval Snapshot (RAG-006)
-当前离线评测基线（60 条）：
-- `retrieval_hit_rate`: `1.0`
-- `citation_coverage`: `1.0`
-- `tool_call_compliance_rate`: `1.0`
-- `answer_consistency_rate`: `1.0`
-- `empty_retrieval_rate`: `0.1`（主要来自负样本）
-
-## Core API Capabilities
-
-### `/api/v1/answer/hybrid` Flow
+### Hybrid Resolve & Clarify Pipeline
 ```mermaid
 flowchart TD
     A["POST /api/v1/answer/hybrid"] --> M["load_session_memory<br/>if session_id"]
@@ -68,6 +45,30 @@ flowchart TD
     MP --> H["HybridAnswerResponse"]
 ```
 
+## System Architecture
+- `agent_parksuite_biz_api`:
+  - 计费规则配置与版本管理
+  - 停车订单与欠费查询
+  - 计费模拟
+- `agent_parksuite_rag_core`:
+  - 知识源/知识分块存储
+  - 检索与回答接口
+  - Hybrid 编排（LangGraph + biz tools）
+- `agent_parksuite_eval`:
+  - 评测数据集（RAG-006）
+  - 评测回放脚本与报告
+
+## Eval Snapshot (RAG-006)
+当前离线评测基线（60 条）：
+- `retrieval_hit_rate`: `1.0`
+- `citation_coverage`: `1.0`
+- `tool_call_compliance_rate`: `1.0`
+- `answer_consistency_rate`: `1.0`
+- `empty_retrieval_rate`: `0.1`（主要来自负样本）
+
+## Core API Capabilities
+
+### `/api/v1/answer/hybrid` Flow
 ### Biz API
 - `POST /api/v1/billing-rules` upsert billing rule
 - `GET /api/v1/billing-rules` list billing rules
@@ -86,9 +87,9 @@ flowchart TD
 
 ### RAG-009 Short-term Memory Highlights
 - 会话契约：`/api/v1/answer/hybrid` 支持 `session_id` / `turn_id`。
-- 槽位继承：`city_code` / `lot_code` / `plate_no` / `order_no` 可在同会话 follow-up 自动补全。
-- 引用解析：支持“这笔/上一单/第一笔”类引用；多候选订单时会触发澄清而非盲选。
-- 可审计性：`graph_trace` 包含 `memory_hydrate:*` 与 `memory_persist` 轨迹。
+- 槽位继承：当前按确定性规则继承 `city_code` / `lot_code` / `plate_no`，并按意图补齐必填槽位。
+- 引用解析：支持“这笔/上一单/第一笔”类订单指代信号，触发澄清门控而非直接放行业务链路。
+- 可审计性：`graph_trace` 包含 `intent_slot_parse:*`、`slot_hydrate:*`、`react_clarify_gate_async:*` 与 `memory_persist`。
 - 隔离保证：不同 `session_id` 不共享短期记忆。
 
 ### RAG-011 Clarify Sub-Agent Highlights
