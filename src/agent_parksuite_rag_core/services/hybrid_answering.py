@@ -97,6 +97,7 @@ async def run_hybrid_answering(
     resolved = await resolve_turn_context_async(payload=payload, memory_state=memory_state)
     payload = resolved.payload
     resolved_intent = resolved.resolved_intent
+    resolved_slots_ctx = (resolved.execution_context.slots if resolved.execution_context else {})
     memory_trace: list[str] = resolved.memory_trace
     if resolved.decision in {"clarify_short_circuit", "clarify_react", "clarify_abort"} and resolved.clarify_reason:
         clarified_intent = resolved_intent or payload.intent_hint or ""
@@ -119,9 +120,9 @@ async def run_hybrid_answering(
                     "error": clarify_error,
                 },
                 "resolved_slots": {
-                    key: getattr(resolved.payload, key)
-                    for key in ("city_code", "lot_code", "plate_no", "order_no", "at_time")
-                    if getattr(resolved.payload, key) is not None
+                    key: value
+                    for key, value in resolved_slots_ctx.items()
+                    if value is not None
                 },
             },
             "conclusion": resolved.clarify_reason,

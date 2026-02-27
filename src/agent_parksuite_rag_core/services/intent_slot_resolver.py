@@ -45,6 +45,15 @@ class ResolvedTurnContext:
     clarify_tool_trace: list[dict[str, Any]] | None = None
     # resolver 阶段产出的最终意图（作为下游业务流的单一意图来源）
     resolved_intent: str | None = None
+    # 内部执行上下文（后续用于替代直接依赖大请求对象）
+    execution_context: "ResolvedExecutionContext" | None = None
+
+
+@dataclass(frozen=True)
+class ResolvedExecutionContext:
+    intent: str | None
+    slots: dict[str, Any]
+    field_sources: dict[str, FieldSource]
 
 
 @dataclass(frozen=True)
@@ -355,6 +364,11 @@ async def resolve_turn_context_async(
     if parse_result.intent in _VALID_INTENTS:
         payload_out = payload_out.model_copy(update={"intent_hint": parse_result.intent})
     trace = [*parse_result.trace, *hydrate_result.trace, *gate_result.trace]
+    execution_context = ResolvedExecutionContext(
+        intent=parse_result.intent if parse_result.intent in _VALID_INTENTS else None,
+        slots=build_request_slots(payload_out),
+        field_sources=dict(hydrate_result.field_sources),
+    )
     return ResolvedTurnContext(
         payload=payload_out,
         decision=gate_result.decision,
@@ -364,6 +378,7 @@ async def resolve_turn_context_async(
         clarify_messages=gate_result.clarify_messages,
         clarify_tool_trace=gate_result.tool_trace,
         resolved_intent=parse_result.intent if parse_result.intent in _VALID_INTENTS else None,
+        execution_context=execution_context,
     )
 
 

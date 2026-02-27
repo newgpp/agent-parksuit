@@ -631,6 +631,9 @@
   - PR-B progress:
     - downstream hybrid classifier now consumes resolver-resolved intent first
     - removed LLM-based second intent arbitration in `hybrid_answering`
+  - PR-C progress:
+    - introduced internal `ResolvedExecutionContext` (intent + slots + field_sources)
+    - short-circuit branch now reads resolved slots from execution context instead of direct payload introspection
 
 #### RAG-010 PR-3 Design (ReAct Clarification Loop)
 - Goal alignment:
