@@ -729,7 +729,7 @@
 - Define and document `rule_payload` schema contract more strictly (JSON Schema / Pydantic typed segments)
 
 ### RAG-011: Clarify Sub-Agent Boundary Refactor
-- Status: `In Progress` (PR-1 scaffold completed)
+- Status: `Done` (PR-1 ~ PR-5 completed)
 - Goal:
   - treat ReAct clarification as an independent sub-agent
   - simplify main hybrid flow by using task-in / result-out contract
@@ -794,14 +794,14 @@
   - PR-4: production/debug path separation
     - production returns stable decision payload only
     - debug endpoints fetch optional deep traces from sub-agent debug adapter
-    - in progress:
+    - implemented:
       - removed `tool_trace` from clarify workflow/agent/gate/debug response end-to-end
       - clarify memory persistence tightened:
         - `clarify_messages` is persisted only when `pending_clarification` exists
         - clarified-to-business turn clears pending clarify artifacts in session memory
   - PR-5: cleanup + migration
     - delete obsolete fields/branches and update replay scripts/tests
-    - in progress:
+    - implemented:
       - removed clarify persistence artifacts from `business_facts` response payload
       - removed `resolved_slots` from clarify response `business_facts` (memory still persists via internal context)
       - session memory persistence now takes internal clarify context via explicit parameters

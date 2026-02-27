@@ -6,7 +6,7 @@
 - Hybrid Agent 链路可落地：`RAG + biz tools + LLM`，已支持 `rule_explain / arrears_check / fee_verify` 三类真实场景。
 - 工程闭环完整：迁移、种子数据、入库、接口、集成测试、E2E、离线评测（`RAG-006`）。
 - 可观测性到位：`X-Trace-Id` 跨服务透传、结构化日志、`graph_trace` 可追踪执行分支。
-- 多轮短期记忆已落地（`RAG-009`）：支持会话内槽位继承、订单引用解析与歧义澄清，回放验收 `12/12` 通过。
+- 多轮短期记忆与澄清子Agent已落地（`RAG-009` + `RAG-011`）：支持槽位继承、ReAct澄清、会话续接，且澄清过程数据与业务返回解耦。
 
 ## System Architecture
 - `agent_parksuite_biz_api`:
@@ -35,8 +35,9 @@
 ```mermaid
 flowchart TD
     A[POST /api/v1/answer/hybrid] --> M[memory_hydrate<br/>slot carry + reference resolve]
-    M -->|ambiguous order reference| X[memory clarify response]
-    M -->|resolved| B[intent_classifier<br/>LLM classify + rule fallback]
+    M --> N[intent_slot_parse + slot_hydrate + react_clarify_gate]
+    N -->|clarification required| X[clarify response]
+    N -->|continue_business| B[intent_classifier<br/>resolver intent authority]
     B -->|rule_explain| C[rule_explain_flow]
     B -->|arrears_check| D[arrears_check_flow]
     B -->|fee_verify| E[fee_verify_flow]
@@ -72,6 +73,12 @@ flowchart TD
 - 引用解析：支持“这笔/上一单/第一笔”类引用；多候选订单时会触发澄清而非盲选。
 - 可审计性：`graph_trace` 包含 `memory_hydrate:*` 与 `memory_persist` 轨迹。
 - 隔离保证：不同 `session_id` 不共享短期记忆。
+
+### RAG-011 Clarify Sub-Agent Highlights
+- ReAct 澄清已抽象为子Agent契约：`ClarifyTask -> ClarifyResult`。
+- `react_clarify_gate_async` 仅消费子Agent结果，去除 direct graph 耦合。
+- `tool_trace` 已端到端移除，降低调试字段对主链路的侵入。
+- `pending_clarification/clarify_messages` 不再出现在生产 `business_facts`，只用于内部 memory 持久化。
 
 
 ## Quick Start
@@ -125,6 +132,7 @@ RAG_BIZ_API_BASE_URL=http://127.0.0.1:8001
 RAG_BIZ_API_TIMEOUT_SECONDS=10
 RAG_MEMORY_TTL_SECONDS=1800
 RAG_MEMORY_MAX_TURNS=20
+RAG_MEMORY_MAX_CLARIFY_MESSAGES=12
 ```
 
 ### Run APIs
