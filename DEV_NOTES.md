@@ -639,6 +639,8 @@
   - PR-D progress:
     - removed `clarify_tool_trace` persistence from session memory
     - keep runtime/debug response tool trace, but do not store it in memory state
+    - moved `/debug/intent-slot-parse` and `/debug/clarify-react` into dedicated `api/debug_routes.py`
+    - production routes module now focuses on online serving path only
 
 #### RAG-010 PR-3 Design (ReAct Clarification Loop)
 - Goal alignment:

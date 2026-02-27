@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from agent_parksuite_common.observability import TraceContextMiddleware, setup_loguru
+from agent_parksuite_rag_core.api.debug_routes import router as rag_debug_router
 from agent_parksuite_rag_core.api.routes import router as rag_router
 from agent_parksuite_rag_core.config import settings
 from agent_parksuite_rag_core.db.session import init_db
@@ -24,6 +25,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.add_middleware(TraceContextMiddleware)
 app.include_router(rag_router)
+app.include_router(rag_debug_router)
 
 
 @app.get("/healthz")
