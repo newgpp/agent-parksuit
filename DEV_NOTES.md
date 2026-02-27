@@ -803,6 +803,7 @@
     - delete obsolete fields/branches and update replay scripts/tests
     - in progress:
       - removed clarify persistence artifacts from `business_facts` response payload
+      - removed `resolved_slots` from clarify response `business_facts` (memory still persists via internal context)
       - session memory persistence now takes internal clarify context via explicit parameters
 - Acceptance:
   - hybrid main flow no longer depends on raw clarify messages/tool traces for normal execution

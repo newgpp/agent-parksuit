@@ -150,7 +150,6 @@ async def run_hybrid_answering(
             "business_facts": {
                 "intent": clarified_intent,
                 "error": clarify_error,
-                "resolved_slots": memory_resolved_slots,
             },
             "conclusion": resolved.clarify_reason,
             "key_points": key_points,
