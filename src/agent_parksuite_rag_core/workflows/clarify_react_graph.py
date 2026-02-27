@@ -160,6 +160,71 @@ def build_clarify_react_app(
     )
 
 
+async def _invoke_clarify_agent(
+    app: Any,
+    messages: list[BaseMessage],
+    max_rounds: int,
+) -> list[BaseMessage]:
+    final_state: ClarifyGraphState = await app.ainvoke(
+        {"messages": messages},
+        config={"recursion_limit": max(4, max_rounds * 2)},
+    )
+    return list(final_state.get("messages", []))
+
+
+def _build_clarify_result(
+    *,
+    decision: str,
+    clarify_question: str | None,
+    resolved_slots: dict[str, Any],
+    required_slots: list[str],
+    trace: list[str],
+    final_messages: list[BaseMessage],
+    tool_trace: list[dict[str, Any]],
+) -> ClarifyReactResult:
+    return {
+        "decision": decision,
+        "clarify_question": clarify_question,
+        "resolved_slots": resolved_slots,
+        "missing_required_slots": _missing_slots(required_slots, resolved_slots),
+        "trace": trace,
+        "messages": _dump_history_messages(final_messages),
+        "tool_trace": tool_trace,
+    }
+
+
+def _parse_action_payload(last_ai: BaseMessage | None) -> tuple[dict[str, Any] | None, str]:
+    if not last_ai:
+        return None, ""
+    ai_content = _message_content_to_text(getattr(last_ai, "content", ""))
+    parsed = _extract_json_payload(ai_content)
+    return parsed, ai_content
+
+
+def _normalize_action_and_slots(
+    *,
+    parsed: dict[str, Any],
+    resolved_slots: dict[str, Any],
+    required_slots: list[str],
+) -> tuple[ClarifyAction, str, str | None, list[str], list[str]]:
+    action_raw = str(parsed.get("action", "ask_user")).strip()
+    action: ClarifyAction = action_raw if action_raw in {"ask_user", "finish_clarify", "abort"} else "ask_user"
+    slot_updates = parsed.get("slot_updates", {})
+    if isinstance(slot_updates, dict):
+        for key, value in slot_updates.items():
+            if value is not None and str(value).strip():
+                resolved_slots[key] = value
+    missing_required_slots = _missing_slots(required_slots, resolved_slots)
+    if action == "finish_clarify" and missing_required_slots:
+        action = "ask_user"
+    decision = "clarify_react" if action == "ask_user" else ("continue_business" if action == "finish_clarify" else "clarify_abort")
+    clarify_question = parsed.get("clarify_question")
+    if action == "ask_user" and not clarify_question:
+        clarify_question = "请补充关键信息后继续，例如订单号 SCN-020 或车牌号。"
+    slot_keys = sorted(slot_updates.keys()) if isinstance(slot_updates, dict) else []
+    return action, decision, (str(clarify_question) if clarify_question is not None else None), missing_required_slots, slot_keys
+
+
 async def run_clarify_react_once(
     *,
     payload: HybridAnswerRequest,
@@ -193,11 +258,8 @@ async def run_clarify_react_once(
         sorted([key for key, value in resolved_slots.items() if value is not None]),
     )
     trace: list[str] = ["clarify_react:start", "clarify_react:agent:create_react_agent"]
-    final_state: ClarifyGraphState = await app.ainvoke(
-        {"messages": messages},
-        config={"recursion_limit": max(4, max_rounds * 2)},
-    )
-    final_messages = list(final_state.get("messages", []))
+    final_messages = await _invoke_clarify_agent(app=app, messages=messages, max_rounds=max_rounds)
+    tool_trace = _extract_tool_trace(final_messages)
     logger.info(
         "clarify_react agent_done final_messages={} recursion_limit={}",
         len(final_messages),
@@ -205,11 +267,9 @@ async def run_clarify_react_once(
     )
     last_ai = next((msg for msg in reversed(final_messages) if getattr(msg, "type", "") == "ai"), None)
 
-    ai_content = _message_content_to_text(getattr(last_ai, "content", "")) if last_ai else ""
-    parsed = _extract_json_payload(ai_content) if last_ai else None
+    parsed, ai_content = _parse_action_payload(last_ai)
     if not parsed:
         question = ai_content.strip()
-        tool_trace = _extract_tool_trace(final_messages)
         trace.append("clarify_react:parse:fallback_ask_user")
         trace.append("clarify_react:agent:ask_user")
         logger.info(
@@ -217,26 +277,21 @@ async def run_clarify_react_once(
             len(question),
             len(tool_trace),
         )
-        return {
-            "decision": "clarify_react",
-            "clarify_question": question or "请补充必要信息后继续。",
-            "resolved_slots": resolved_slots,
-            "missing_required_slots": _missing_slots(required_slots, resolved_slots),
-            "trace": trace,
-            "messages": _dump_history_messages(final_messages),
-            "tool_trace": tool_trace,
-        }
+        return _build_clarify_result(
+            decision="clarify_react",
+            clarify_question=(question or "请补充必要信息后继续。"),
+            resolved_slots=resolved_slots,
+            required_slots=required_slots,
+            trace=trace,
+            final_messages=final_messages,
+            tool_trace=tool_trace,
+        )
 
-    action_raw = str(parsed.get("action", "ask_user")).strip()
-    action: ClarifyAction = action_raw if action_raw in {"ask_user", "finish_clarify", "abort"} else "ask_user"
-    slot_updates = parsed.get("slot_updates", {})
-    if isinstance(slot_updates, dict):
-        for key, value in slot_updates.items():
-            if value is not None and str(value).strip():
-                resolved_slots[key] = value
-    missing_required_slots = _missing_slots(required_slots, resolved_slots)
-    if action == "finish_clarify" and missing_required_slots:
-        action = "ask_user"
+    action, decision, clarify_question, missing_required_slots, slot_update_keys = _normalize_action_and_slots(
+        parsed=parsed,
+        resolved_slots=resolved_slots,
+        required_slots=required_slots,
+    )
     if action == "ask_user":
         trace.append("clarify_react:agent:ask_user")
     elif action == "finish_clarify":
@@ -244,26 +299,21 @@ async def run_clarify_react_once(
     else:
         trace.append("clarify_react:agent:abort")
 
-    decision = "clarify_react" if action == "ask_user" else ("continue_business" if action == "finish_clarify" else "clarify_abort")
-    clarify_question = parsed.get("clarify_question")
-    if action == "ask_user" and not clarify_question:
-        clarify_question = "请补充关键信息后继续，例如订单号 SCN-020 或车牌号。"
-
     logger.info(
         "clarify_react result action={} decision={} slot_updates_keys={} missing_required_slots={} rounds={} tool_calls={}",
         action,
         decision,
-        sorted(slot_updates.keys()) if isinstance(slot_updates, dict) else [],
+        slot_update_keys,
         missing_required_slots,
         max_rounds,
-        len(_extract_tool_trace(final_messages)),
+        len(tool_trace),
     )
-    return {
-        "decision": decision,
-        "clarify_question": str(clarify_question) if clarify_question is not None else None,
-        "resolved_slots": resolved_slots,
-        "missing_required_slots": missing_required_slots,
-        "trace": trace,
-        "messages": _dump_history_messages(final_messages),
-        "tool_trace": _extract_tool_trace(final_messages),
-    }
+    return _build_clarify_result(
+        decision=decision,
+        clarify_question=clarify_question,
+        resolved_slots=resolved_slots,
+        required_slots=required_slots,
+        trace=trace,
+        final_messages=final_messages,
+        tool_trace=tool_trace,
+    )
