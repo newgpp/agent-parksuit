@@ -5,7 +5,7 @@ from typing import Any, Awaitable, Callable
 from langchain_core.messages import HumanMessage, SystemMessage
 from loguru import logger
 
-from agent_parksuite_rag_core.clients.biz_api_client import BizApiClient
+from agent_parksuite_rag_core.clients.biz_api_client import get_biz_client
 from agent_parksuite_rag_core.clients.llm_client import get_chat_llm
 from agent_parksuite_rag_core.config import settings
 from agent_parksuite_rag_core.schemas.answer import HybridAnswerRequest
@@ -86,6 +86,9 @@ async def _persist_session_memory(
     clarify_messages = facts.get("clarify_messages")
     if isinstance(clarify_messages, list):
         new_state["clarify_messages"] = clarify_messages
+    clarify_tool_trace = facts.get("clarify_tool_trace")
+    if isinstance(clarify_tool_trace, list):
+        new_state["clarify_tool_trace"] = clarify_tool_trace
     pending_clarification = facts.get("pending_clarification")
     if isinstance(pending_clarification, dict):
         new_state["pending_clarification"] = pending_clarification
@@ -179,6 +182,7 @@ async def run_hybrid_answering(
                     "intent": clarified_intent,
                     "error": clarify_error,
                     "clarify_messages": resolved.clarify_messages or [],
+                    "clarify_tool_trace": resolved.clarify_tool_trace or [],
                     "pending_clarification": {
                         "decision": resolved.decision,
                         "error": clarify_error,
@@ -207,10 +211,7 @@ async def run_hybrid_answering(
         payload.city_code,
         payload.lot_code,
     )
-    biz_client = BizApiClient(
-        base_url=settings.biz_api_base_url,
-        timeout_seconds=settings.biz_api_timeout_seconds,
-    )
+    biz_client = get_biz_client()
     fact_tools = BizFactTools(biz_client=biz_client)
 
     async def _arrears_facts_fn(p: HybridAnswerRequest) -> dict[str, Any]:
