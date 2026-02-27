@@ -224,12 +224,14 @@ async def test_hybrid_should_clear_clarify_memory_after_continue_business(
     assert resp1.status_code == 200
     body1 = resp1.json()
     assert body1["business_facts"]["error"] == "missing_plate_no"
-    assert isinstance(body1["business_facts"].get("pending_clarification"), dict)
+    assert "pending_clarification" not in body1["business_facts"]
+    assert "clarify_messages" not in body1["business_facts"]
 
     repo = get_session_memory_repo()
     state1 = await repo.get_session(session_id)
     assert state1 is not None
     assert "pending_clarification" in state1
+    assert "clarify_messages" not in state1
 
     resp2 = await rag_async_client.post(
         "/api/v1/answer/hybrid",

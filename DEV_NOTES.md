@@ -801,6 +801,9 @@
         - clarified-to-business turn clears pending clarify artifacts in session memory
   - PR-5: cleanup + migration
     - delete obsolete fields/branches and update replay scripts/tests
+    - in progress:
+      - removed clarify persistence artifacts from `business_facts` response payload
+      - session memory persistence now takes internal clarify context via explicit parameters
 - Acceptance:
   - hybrid main flow no longer depends on raw clarify messages/tool traces for normal execution
   - clarify module can be tested independently via task/result contract

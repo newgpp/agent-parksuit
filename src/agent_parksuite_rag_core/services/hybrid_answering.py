@@ -46,6 +46,10 @@ async def _persist_session_memory(
     payload: HybridAnswerRequest,
     result: HybridGraphState,
     previous_state: SessionMemoryState | None,
+    *,
+    pending_clarification: dict[str, Any] | None = None,
+    clarify_messages: list[dict[str, Any]] | None = None,
+    resolved_slots_override: dict[str, Any] | None = None,
 ) -> None:
     session_id = (payload.session_id or "").strip()
     if not session_id:
@@ -66,7 +70,9 @@ async def _persist_session_memory(
         slots["plate_no"] = facts["plate_no"]
     if facts.get("city_code"):
         slots["city_code"] = facts["city_code"]
-    resolved_slots = facts.get("resolved_slots", {})
+    resolved_slots = resolved_slots_override
+    if not isinstance(resolved_slots, dict):
+        resolved_slots = facts.get("resolved_slots", {})
     if isinstance(resolved_slots, dict):
         for key, value in resolved_slots.items():
             if value is not None:
@@ -88,10 +94,8 @@ async def _persist_session_memory(
         "slots": slots,
         "turns": turns,
     }
-    pending_clarification = facts.get("pending_clarification")
     if isinstance(pending_clarification, dict):
         new_state["pending_clarification"] = pending_clarification
-        clarify_messages = facts.get("clarify_messages")
         if isinstance(clarify_messages, list) and clarify_messages:
             new_state["clarify_messages"] = clarify_messages[-settings.memory_max_clarify_messages :]
     if isinstance(resolved_slots, dict):
@@ -122,9 +126,19 @@ async def run_hybrid_answering(
     execution_ctx = _to_execution_context(payload, resolved_intent)
     resolved_slots_ctx = (resolved.execution_context.slots if resolved.execution_context else {})
     memory_trace: list[str] = resolved.memory_trace
+    memory_pending_clarification: dict[str, Any] | None = None
+    memory_clarify_messages: list[dict[str, Any]] | None = None
+    memory_resolved_slots: dict[str, Any] = {
+        key: value for key, value in resolved_slots_ctx.items() if value is not None
+    }
     if resolved.decision in {"clarify_short_circuit", "clarify_react", "clarify_abort"} and resolved.clarify_reason:
         clarified_intent = resolved_intent or payload.intent_hint or ""
         clarify_error = resolved.clarify_error or "clarification_required"
+        memory_pending_clarification = {
+            "decision": resolved.decision,
+            "error": clarify_error,
+        }
+        memory_clarify_messages = resolved.clarify_messages or []
         key_points = ["请提供明确的订单号（order_no），例如 SCN-020。"]
         if clarify_error == "missing_plate_no":
             key_points = ["请提供车牌号（plate_no），例如 沪A12345。"]
@@ -136,16 +150,7 @@ async def run_hybrid_answering(
             "business_facts": {
                 "intent": clarified_intent,
                 "error": clarify_error,
-                "clarify_messages": resolved.clarify_messages or [],
-                "pending_clarification": {
-                    "decision": resolved.decision,
-                    "error": clarify_error,
-                },
-                "resolved_slots": {
-                    key: value
-                    for key, value in resolved_slots_ctx.items()
-                    if value is not None
-                },
+                "resolved_slots": memory_resolved_slots,
             },
             "conclusion": resolved.clarify_reason,
             "key_points": key_points,
@@ -153,7 +158,14 @@ async def run_hybrid_answering(
             "trace": [*memory_trace, f"answer_synthesizer:{resolved.decision}"],
         }
         if payload.session_id:
-            await _persist_session_memory(payload, result, memory_state)
+            await _persist_session_memory(
+                payload,
+                result,
+                memory_state,
+                pending_clarification=memory_pending_clarification,
+                clarify_messages=memory_clarify_messages,
+                resolved_slots_override=memory_resolved_slots,
+            )
         return result
 
     logger.info(
@@ -223,5 +235,12 @@ async def run_hybrid_answering(
     )
     if payload.session_id:
         result["trace"] = [*memory_trace, *result.get("trace", []), "memory_persist"]
-        await _persist_session_memory(payload, result, memory_state)
+        await _persist_session_memory(
+            payload,
+            result,
+            memory_state,
+            pending_clarification=None,
+            clarify_messages=None,
+            resolved_slots_override=memory_resolved_slots,
+        )
     return result
