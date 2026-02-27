@@ -16,6 +16,8 @@ LLMFactory = Callable[[], Any]
 CLARIFY_SYSTEM_PROMPT = (
     "你是停车业务澄清助手。"
     "目标是最短路径补齐业务必填槽位并消除歧义。"
+    "当用户参数可能同时代表订单或停车场时，优先调用工具先查订单再查停车场后再判断。"
+    "最终回复必须是单个 JSON 对象，且只能包含 JSON，禁止输出任何额外说明、前后缀或 Markdown。"
     '仅输出JSON: {"action":"ask_user|finish_clarify|abort",'
     '"clarify_question":string|null,"slot_updates":object,"reason":string|null}。'
 )
@@ -28,6 +30,7 @@ class ClarifyReactResult(TypedDict, total=False):
     missing_required_slots: list[str]
     trace: list[str]
     messages: list[dict[str, Any]]
+    tool_trace: list[dict[str, Any]]
 
 
 class ClarifyGraphState(TypedDict, total=False):
@@ -40,11 +43,38 @@ def _extract_json_payload(text: str) -> dict[str, Any] | None:
         lines = content.splitlines()
         if len(lines) >= 3:
             content = "\n".join(lines[1:-1]).strip()
+
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError:
+        decoder = json.JSONDecoder()
+        start = content.find("{")
+        while start >= 0:
+            try:
+                candidate, _ = decoder.raw_decode(content[start:])
+            except json.JSONDecodeError:
+                start = content.find("{", start + 1)
+                continue
+            return candidate if isinstance(candidate, dict) else None
         return None
     return parsed if isinstance(parsed, dict) else None
+
+
+def _message_content_to_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text")
+                parts.append(str(text) if text is not None else str(item))
+            else:
+                parts.append(str(item))
+        return "\n".join(part for part in parts if part)
+    return str(content)
 
 
 def _missing_slots(required_slots: list[str], resolved_slots: dict[str, Any]) -> list[str]:
@@ -101,6 +131,20 @@ def _dump_history_messages(messages: list[BaseMessage]) -> list[dict[str, Any]]:
             item["tool_call_id"] = str(getattr(message, "tool_call_id", ""))
         serialized.append(item)
     return serialized
+
+
+def _extract_tool_trace(messages: list[BaseMessage]) -> list[dict[str, Any]]:
+    trace: list[dict[str, Any]] = []
+    for message in messages:
+        if getattr(message, "type", "") != "tool":
+            continue
+        trace.append(
+            {
+                "tool_call_id": str(getattr(message, "tool_call_id", "")),
+                "content": str(getattr(message, "content", "")),
+            }
+        )
+    return trace
 
 
 def build_clarify_react_app(
@@ -161,13 +205,17 @@ async def run_clarify_react_once(
     )
     last_ai = next((msg for msg in reversed(final_messages) if getattr(msg, "type", "") == "ai"), None)
 
-    parsed = _extract_json_payload(str(getattr(last_ai, "content", ""))) if last_ai else None
+    ai_content = _message_content_to_text(getattr(last_ai, "content", "")) if last_ai else ""
+    parsed = _extract_json_payload(ai_content) if last_ai else None
     if not parsed:
-        trace.append("clarify_react:parse:invalid_json")
-        question = str(getattr(last_ai, "content", "")).strip() if last_ai else ""
+        question = ai_content.strip()
+        tool_trace = _extract_tool_trace(final_messages)
+        trace.append("clarify_react:parse:fallback_ask_user")
+        trace.append("clarify_react:agent:ask_user")
         logger.info(
-            "clarify_react parse_result=invalid_json fallback_question_len={}",
+            "clarify_react parse_result=fallback_ask_user question_len={} tool_calls={}",
             len(question),
+            len(tool_trace),
         )
         return {
             "decision": "clarify_react",
@@ -176,6 +224,7 @@ async def run_clarify_react_once(
             "missing_required_slots": _missing_slots(required_slots, resolved_slots),
             "trace": trace,
             "messages": _dump_history_messages(final_messages),
+            "tool_trace": tool_trace,
         }
 
     action_raw = str(parsed.get("action", "ask_user")).strip()
@@ -201,12 +250,13 @@ async def run_clarify_react_once(
         clarify_question = "请补充关键信息后继续，例如订单号 SCN-020 或车牌号。"
 
     logger.info(
-        "clarify_react result action={} decision={} slot_updates_keys={} missing_required_slots={} rounds={}",
+        "clarify_react result action={} decision={} slot_updates_keys={} missing_required_slots={} rounds={} tool_calls={}",
         action,
         decision,
         sorted(slot_updates.keys()) if isinstance(slot_updates, dict) else [],
         missing_required_slots,
         max_rounds,
+        len(_extract_tool_trace(final_messages)),
     )
     return {
         "decision": decision,
@@ -215,4 +265,5 @@ async def run_clarify_react_once(
         "missing_required_slots": missing_required_slots,
         "trace": trace,
         "messages": _dump_history_messages(final_messages),
+        "tool_trace": _extract_tool_trace(final_messages),
     }
