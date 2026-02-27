@@ -127,23 +127,48 @@ async def run_clarify_react_once(
 ) -> ClarifyReactResult:
     app = build_clarify_react_app(llm_factory=llm_factory, tools=tools or [])
     history = _load_history_messages(memory_state)
+    logger.info(
+        "clarify_react input session_id={} required_slots={} max_rounds={} history_messages={}",
+        payload.session_id,
+        required_slots,
+        max_rounds,
+        len(history),
+    )
     messages: list[BaseMessage] = [
         *history,
         HumanMessage(content=payload.query),
     ]
+    logger.info(
+        "clarify_react merge_messages total_messages={} appended_user_query_len={}",
+        len(messages),
+        len(payload.query),
+    )
     resolved_slots = _merge_slots_from_payload(payload)
+    logger.info(
+        "clarify_react initial_slots keys_with_value={}",
+        sorted([key for key, value in resolved_slots.items() if value is not None]),
+    )
     trace: list[str] = ["clarify_react:start", "clarify_react:agent:create_react_agent"]
     final_state: ClarifyGraphState = await app.ainvoke(
         {"messages": messages},
         config={"recursion_limit": max(4, max_rounds * 2)},
     )
     final_messages = list(final_state.get("messages", []))
+    logger.info(
+        "clarify_react agent_done final_messages={} recursion_limit={}",
+        len(final_messages),
+        max(4, max_rounds * 2),
+    )
     last_ai = next((msg for msg in reversed(final_messages) if getattr(msg, "type", "") == "ai"), None)
 
     parsed = _extract_json_payload(str(getattr(last_ai, "content", ""))) if last_ai else None
     if not parsed:
         trace.append("clarify_react:parse:invalid_json")
         question = str(getattr(last_ai, "content", "")).strip() if last_ai else ""
+        logger.info(
+            "clarify_react parse_result=invalid_json fallback_question_len={}",
+            len(question),
+        )
         return {
             "decision": "clarify_react",
             "clarify_question": question or "请补充必要信息后继续。",
@@ -176,8 +201,10 @@ async def run_clarify_react_once(
         clarify_question = "请补充关键信息后继续，例如订单号 SCN-020 或车牌号。"
 
     logger.info(
-        "clarify_react result decision={} missing_required_slots={} rounds={}",
+        "clarify_react result action={} decision={} slot_updates_keys={} missing_required_slots={} rounds={}",
+        action,
         decision,
+        sorted(slot_updates.keys()) if isinstance(slot_updates, dict) else [],
         missing_required_slots,
         max_rounds,
     )

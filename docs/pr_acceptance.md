@@ -381,12 +381,54 @@ curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
 - `decision` 为 `clarify_react`（或 `clarify_abort`）
 - `messages` 非空（进入 ReAct 链路后才会累计）
 
-### 用例D：ReAct 异常兜底（需测试桩/故障注入）
-说明：该用例用于验证 LLM/ReAct 调用失败时的统一 fallback。
+### 用例D：承接用例C后直接收敛（Step-1 命中）
+```bash
+curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "RAG010-PR3-DBG-003",
+    "query": "我要核验订单 SCN-020 的金额",
+    "required_slots": ["order_no"]
+  }'
+```
 预期：
-- `decision=clarify_short_circuit`
-- `clarify_error=clarify_fallback`
-- `trace` 包含 `react_clarify_gate_async:fallback:react_error`
+- `resolved_slots.order_no=SCN-020`
+- `missing_required_slots=[]`
+- `decision=continue_business`
+- `trace` 包含 `react_clarify_gate_async:pass`（不进入 ReAct）
+- `messages=[]`
+
+### 用例E：进入 ReAct 澄清流程
+```bash
+curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "RAG010-PR3-DBG-004",
+    "query": "这单怎么处理",
+    "required_slots": []
+  }'
+```
+预期：
+- `decision=clarify_react`（或 `clarify_abort`）
+- `trace` 包含 `react_clarify_gate_async:enter_react` 与 `clarify_react:agent:*`
+- `messages` 非空（出现 `user/assistant`）
+
+### 用例F：通过 ReAct 澄清后继续业务
+说明：该用例承接用例E，使用相同 `session_id`。
+```bash
+curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "RAG010-PR3-DBG-004",
+    "query": "我是想问 SCN-LOT-A 停车场编码的收费规则，不是核验订单金额",
+    "intent": "rule_explain",
+    "required_slots": []
+  }'
+```
+预期：
+- 目标：`decision=continue_business`
+- `trace` 包含 `react_clarify_gate_async:continue_business`（若本轮通过 ReAct 收敛）
+- 若仍返回 `clarify_react`，可继续同会话补充明确意图直到收敛
 
 ### 说明：工具校验场景
 - 当前实现 `tools=[]`，尚未接入 `validate_order_no/validate_plate_no` 等工具。
