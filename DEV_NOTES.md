@@ -727,3 +727,71 @@
 
 ## Open items
 - Define and document `rule_payload` schema contract more strictly (JSON Schema / Pydantic typed segments)
+
+### RAG-011: Clarify Sub-Agent Boundary Refactor
+- Status: `In Progress` (PR-1 scaffold completed)
+- Goal:
+  - treat ReAct clarification as an independent sub-agent
+  - simplify main hybrid flow by using task-in / result-out contract
+  - isolate clarification memory/context from production business execution path
+- Problem statement:
+  - current clarification path still leaks process-level data (`messages`, traces, tool traces) into outer layers
+  - `run_clarify_react_once` and surrounding orchestration carry mixed responsibilities (agent loop + state transfer + business integration)
+- Target architecture:
+  - external orchestrator calls a single entry:
+    - `run_clarify_task(task) -> result`
+  - sub-agent internalizes:
+    - ReAct loop
+    - short-term clarify memory
+    - tool reasoning traces
+  - outer system only consumes:
+    - decision (`continue_business|ask_user|abort`)
+    - clarify question
+    - slot updates / resolved intent
+    - missing required slots
+- Contract proposal:
+  - `ClarifyTask`:
+    - `query`
+    - `known_slots`
+    - `required_slots`
+    - `intent_hint` (optional)
+    - `session_key` (optional, for clarify memory namespace)
+  - `ClarifyResult`:
+    - `decision`
+    - `clarify_question`
+    - `slot_updates`
+    - `resolved_intent` (optional)
+    - `missing_required_slots`
+    - `meta` (lightweight diagnostics only)
+- Memory boundary:
+  - sub-agent memory:
+    - private clarify history
+    - tool-level intermediate context
+  - outer session memory:
+    - only stable artifacts (`slots`, `pending_clarification`, summarized resolved result)
+  - non-goal:
+    - persist full ReAct internal trace in production memory state
+- PR split (recommended):
+  - PR-1: sub-agent contract scaffold
+    - add `ClarifyTask` / `ClarifyResult` schema
+    - add `ClarifyAgent` interface and adapter over existing `run_clarify_react_once`
+    - keep behavior unchanged
+    - implemented:
+      - new file `services/clarify_agent.py` (`ClarifyTask`, `ClarifyResult`, `ClarifyAgent`, `ReActClarifyAgent`)
+      - `react_clarify_gate_async` now invokes `ClarifyAgent` contract instead of direct graph function
+  - PR-2: internal clarify memory encapsulation
+    - move clarify message serialization/deserialization into sub-agent module
+    - remove direct memory plumbing from route/service layer
+  - PR-3: orchestration simplification
+    - `react_clarify_gate_async` consumes `ClarifyAgent` result only
+    - remove process-level fields from gate return path where unnecessary
+  - PR-4: production/debug path separation
+    - production returns stable decision payload only
+    - debug endpoints fetch optional deep traces from sub-agent debug adapter
+  - PR-5: cleanup + migration
+    - delete obsolete fields/branches and update replay scripts/tests
+- Acceptance:
+  - hybrid main flow no longer depends on raw clarify messages/tool traces for normal execution
+  - clarify module can be tested independently via task/result contract
+  - production memory payload is reduced and stable
+  - existing hybrid behavior remains compatible for user-visible outputs

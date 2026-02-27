@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Literal
+from typing import Any, Callable, Literal
 
 from agent_parksuite_rag_core.schemas.answer import HybridAnswerRequest
+from agent_parksuite_rag_core.services.clarify_agent import (
+    ClarifyAgent,
+    ClarifyTask,
+    ReActClarifyAgent,
+)
 from agent_parksuite_rag_core.services.memory import SessionMemoryState
-from agent_parksuite_rag_core.tools.clarify_react_tools import build_clarify_react_tools
-from agent_parksuite_rag_core.workflows.clarify_react_graph import run_clarify_react_once
 
 # Resolver决策枚举：
 # continue_business=继续业务执行，clarify_short_circuit=规则短路澄清，clarify_react=进入ReAct澄清，clarify_abort=澄清终止。
@@ -84,21 +87,22 @@ async def _invoke_react_once(
     required_slots_override: list[str] | None,
     max_rounds: int,
     trace: list[str],
+    clarify_agent: ClarifyAgent,
 ) -> tuple[dict[str, Any] | None, ReactClarifyGateResult | None]:
     required_slots = (
         list(required_slots_override)
         if required_slots_override
         else list(required_slots_for_intent(parse_result.intent))
     )
-    react_tools = build_clarify_react_tools()
     try:
-        react_result = await run_clarify_react_once(
-            payload=hydrate_result.payload,
-            llm_factory=llm_factory,
-            required_slots=required_slots,
-            memory_state=memory_state,
-            tools=react_tools,
-            max_rounds=max_rounds,
+        clarify_result = await clarify_agent.run_clarify_task(
+            ClarifyTask(
+                payload=hydrate_result.payload,
+                required_slots=required_slots,
+                llm_factory=llm_factory,
+                memory_state=memory_state,
+                max_rounds=max_rounds,
+            )
         )
     except Exception:
         return None, ReactClarifyGateResult(
@@ -110,7 +114,15 @@ async def _invoke_react_once(
             tool_trace=[],
             clarify_messages=None,
         )
-    return react_result, None
+    return {
+        "decision": clarify_result.decision,
+        "clarify_question": clarify_result.clarify_question,
+        "resolved_slots": clarify_result.resolved_slots,
+        "missing_required_slots": clarify_result.missing_required_slots,
+        "trace": clarify_result.trace,
+        "messages": clarify_result.messages,
+        "tool_trace": clarify_result.tool_trace,
+    }, None
 
 
 def _normalize_react_result(
@@ -177,6 +189,7 @@ async def react_clarify_gate_async(
     required_slots_for_intent: RequiredSlotsResolver,
     required_slots_override: list[str] | None = None,
     max_rounds: int = 3,
+    clarify_agent: ClarifyAgent | None = None,
 ) -> ReactClarifyGateResult:
     # Step-3: react_clarify_gate
     # ReAct澄清编排阶段：当 Step-1/Step-2 仍无法收敛时进入，
@@ -200,6 +213,7 @@ async def react_clarify_gate_async(
         return short_circuit
 
     trace.append("react_clarify_gate_async:enter_react")
+    clarify_agent_impl = clarify_agent or ReActClarifyAgent()
     react_result, fallback = await _invoke_react_once(
         parse_result=parse_result,
         hydrate_result=hydrate_result,
@@ -209,6 +223,7 @@ async def react_clarify_gate_async(
         required_slots_override=required_slots_override,
         max_rounds=max_rounds,
         trace=trace,
+        clarify_agent=clarify_agent_impl,
     )
     if fallback is not None:
         return fallback
