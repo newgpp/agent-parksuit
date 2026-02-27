@@ -788,6 +788,8 @@
   - PR-3: orchestration simplification
     - `react_clarify_gate_async` consumes `ClarifyAgent` result only
     - remove process-level fields from gate return path where unnecessary
+    - in progress:
+      - gate internal flow switched from `dict` relay to typed `ClarifyResult` relay
   - PR-4: production/debug path separation
     - production returns stable decision payload only
     - debug endpoints fetch optional deep traces from sub-agent debug adapter

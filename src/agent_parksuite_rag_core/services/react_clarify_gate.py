@@ -6,6 +6,7 @@ from typing import Any, Callable, Literal
 from agent_parksuite_rag_core.schemas.answer import HybridAnswerRequest
 from agent_parksuite_rag_core.services.clarify_agent import (
     ClarifyAgent,
+    ClarifyResult,
     ClarifyTask,
     ReActClarifyAgent,
 )
@@ -88,7 +89,7 @@ async def _invoke_react_once(
     max_rounds: int,
     trace: list[str],
     clarify_agent: ClarifyAgent,
-) -> tuple[dict[str, Any] | None, ReactClarifyGateResult | None]:
+) -> tuple[ClarifyResult | None, ReactClarifyGateResult | None]:
     required_slots = (
         list(required_slots_override)
         if required_slots_override
@@ -114,15 +115,7 @@ async def _invoke_react_once(
             tool_trace=[],
             clarify_messages=None,
         )
-    return {
-        "decision": clarify_result.decision,
-        "clarify_question": clarify_result.clarify_question,
-        "resolved_slots": clarify_result.resolved_slots,
-        "missing_required_slots": clarify_result.missing_required_slots,
-        "trace": clarify_result.trace,
-        "messages": clarify_result.messages,
-        "tool_trace": clarify_result.tool_trace,
-    }, None
+    return clarify_result, None
 
 
 def _normalize_react_result(
@@ -130,20 +123,20 @@ def _normalize_react_result(
     parse_result: Any,
     hydrate_result: Any,
     trace: list[str],
-    react_result: dict[str, Any],
+    react_result: ClarifyResult,
 ) -> ReactClarifyGateResult:
-    react_decision = str(react_result.get("decision", "clarify_react"))
-    react_messages = react_result.get("messages")
-    react_tool_trace = react_result.get("tool_trace", [])
-    react_trace = list(react_result.get("trace", []))
-    merged_payload = hydrate_result.payload.model_copy(update=dict(react_result.get("resolved_slots", {})))
-    react_missing = list(react_result.get("missing_required_slots", []))
+    react_decision = react_result.decision
+    react_messages = react_result.messages
+    react_tool_trace = react_result.tool_trace
+    react_trace = react_result.trace
+    merged_payload = hydrate_result.payload.model_copy(update=dict(react_result.resolved_slots))
+    react_missing = list(react_result.missing_required_slots)
 
     if parse_result.intent is None:
         return ReactClarifyGateResult(
             decision="clarify_react",
             payload=merged_payload,
-            clarify_reason=react_result.get("clarify_question") or "请先确认你的问题类型：规则解释、欠费查询，还是订单金额核验？",
+            clarify_reason=react_result.clarify_question or "请先确认你的问题类型：规则解释、欠费查询，还是订单金额核验？",
             clarify_error="missing_intent",
             trace=[*trace, *react_trace, "react_clarify_gate_async:pending_intent"],
             tool_trace=react_tool_trace,
@@ -163,7 +156,7 @@ def _normalize_react_result(
         return ReactClarifyGateResult(
             decision="clarify_abort",
             payload=merged_payload,
-            clarify_reason=react_result.get("clarify_question") or "当前信息仍不足以继续，请补充关键信息后重试。",
+            clarify_reason=react_result.clarify_question or "当前信息仍不足以继续，请补充关键信息后重试。",
             clarify_error="clarify_abort",
             trace=[*trace, *react_trace, "react_clarify_gate_async:abort"],
             tool_trace=react_tool_trace,
@@ -172,7 +165,7 @@ def _normalize_react_result(
     return ReactClarifyGateResult(
         decision="clarify_react",
         payload=merged_payload,
-        clarify_reason=react_result.get("clarify_question") or "请补充必要信息后继续。",
+        clarify_reason=react_result.clarify_question or "请补充必要信息后继续。",
         clarify_error="clarify_react_required",
         trace=[*trace, *react_trace, "react_clarify_gate_async:clarify_react"],
         tool_trace=react_tool_trace,
@@ -231,5 +224,14 @@ async def react_clarify_gate_async(
         parse_result=parse_result,
         hydrate_result=hydrate_result,
         trace=trace,
-        react_result=react_result or {},
+        react_result=react_result
+        or ClarifyResult(
+            decision="clarify_react",
+            clarify_question=None,
+            resolved_slots={},
+            missing_required_slots=[],
+            trace=[],
+            messages=[],
+            tool_trace=[],
+        ),
     )
