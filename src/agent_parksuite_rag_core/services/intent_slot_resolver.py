@@ -199,6 +199,17 @@ async def _intent_slot_parse(payload: HybridAnswerRequest) -> IntentSlotParseRes
     deterministic = _intent_slot_parse_deterministic(payload)
     if deterministic.intent in _VALID_INTENTS:
         return deterministic
+    if not settings.deepseek_api_key:
+        logger.info("llm[intent_slot_parse] skip reason=no_api_key fallback=deterministic")
+        return IntentSlotParseResult(
+            payload=deterministic.payload,
+            intent=deterministic.intent,
+            intent_confidence=deterministic.intent_confidence,
+            field_sources=deterministic.field_sources,
+            missing_required_slots=deterministic.missing_required_slots,
+            ambiguities=deterministic.ambiguities,
+            trace=[*deterministic.trace, "intent_slot_parse:llm_skip:no_api_key"],
+        )
     llm = get_chat_llm(temperature=0, timeout_seconds=8)
     messages = [
         SystemMessage(

@@ -74,18 +74,6 @@ class BizApiClient:
             data = resp.json()
             return data if isinstance(data, dict) else {}
 
-
-@lru_cache(maxsize=1)
-def build_biz_client(base_url: str, timeout_seconds: float) -> BizApiClient:
-    return BizApiClient(base_url=base_url, timeout_seconds=timeout_seconds)
-
-
-def get_biz_client() -> BizApiClient:
-    return build_biz_client(
-        base_url=settings.biz_api_base_url,
-        timeout_seconds=settings.biz_api_timeout_seconds,
-    )
-
     async def simulate_billing(self, rule_code: str, entry_time: datetime, exit_time: datetime) -> dict[str, Any]:
         payload = {
             "rule_code": rule_code,
@@ -106,3 +94,15 @@ def get_biz_client() -> BizApiClient:
             resp.raise_for_status()
             data = resp.json()
             return data if isinstance(data, dict) else {}
+
+
+@lru_cache(maxsize=1)
+def build_biz_client(base_url: str, timeout_seconds: float) -> BizApiClient:
+    return BizApiClient(base_url=base_url, timeout_seconds=timeout_seconds)
+
+
+def get_biz_client() -> BizApiClient:
+    return build_biz_client(
+        base_url=settings.biz_api_base_url,
+        timeout_seconds=settings.biz_api_timeout_seconds,
+    )

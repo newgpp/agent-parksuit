@@ -31,6 +31,7 @@ from agent_parksuite_rag_core.schemas.retrieve import (
 )
 from agent_parksuite_rag_core.services.answering import generate_answer_from_chunks
 from agent_parksuite_rag_core.services.hybrid_answering import run_hybrid_answering
+from agent_parksuite_rag_core.workflows.hybrid_answer import HybridExecutionContext
 from agent_parksuite_rag_core.services.intent_slot_resolver import debug_clarify_react, debug_intent_slot_parse
 from agent_parksuite_rag_core.services.memory import get_session_memory_repo
 
@@ -177,8 +178,19 @@ async def answer_hybrid(
         len(payload.source_ids or []),
     )
 
-    async def _hybrid_retrieve(hybrid_payload: HybridAnswerRequest) -> list[RetrieveResponseItem]:
-        retrieve_payload = _build_retrieve_request(hybrid_payload)
+    async def _hybrid_retrieve(hybrid_payload: HybridExecutionContext) -> list[RetrieveResponseItem]:
+        retrieve_payload = RetrieveRequest(
+            query=hybrid_payload.query,
+            query_embedding=hybrid_payload.query_embedding,
+            top_k=hybrid_payload.top_k,
+            doc_type=hybrid_payload.doc_type,
+            source_type=hybrid_payload.source_type,
+            city_code=hybrid_payload.city_code,
+            lot_code=hybrid_payload.lot_code,
+            at_time=hybrid_payload.at_time,
+            source_ids=hybrid_payload.source_ids,
+            include_inactive=hybrid_payload.include_inactive,
+        )
         try:
             items = await repo.retrieve(retrieve_payload)
         except ValueError as exc:

@@ -1,22 +1,44 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Awaitable, Callable, TypedDict
 
 from langgraph.graph import END, StateGraph
 from loguru import logger
 
-from agent_parksuite_rag_core.schemas.answer import HybridAnswerRequest
 from agent_parksuite_rag_core.schemas.retrieve import RetrieveResponseItem
 
-RetrieveFn = Callable[[HybridAnswerRequest], Awaitable[list[RetrieveResponseItem]]]
-ClassifyFn = Callable[[HybridAnswerRequest], Awaitable[str]]
-ArrearsFactsFn = Callable[[HybridAnswerRequest], Awaitable[dict[str, Any]]]
-FeeFactsFn = Callable[[HybridAnswerRequest], Awaitable[dict[str, Any]]]
+
+@dataclass(frozen=True)
+class HybridExecutionContext:
+    query: str
+    intent_hint: str | None = None
+    query_embedding: list[float] | None = None
+    top_k: int = 5
+    doc_type: str | None = None
+    source_type: str | None = None
+    city_code: str | None = None
+    lot_code: str | None = None
+    at_time: datetime | None = None
+    source_ids: list[str] | None = None
+    include_inactive: bool = False
+    plate_no: str | None = None
+    order_no: str | None = None
+    rule_code: str | None = None
+    entry_time: datetime | None = None
+    exit_time: datetime | None = None
+
+
+RetrieveFn = Callable[[HybridExecutionContext], Awaitable[list[RetrieveResponseItem]]]
+ClassifyFn = Callable[[HybridExecutionContext], Awaitable[str]]
+ArrearsFactsFn = Callable[[HybridExecutionContext], Awaitable[dict[str, Any]]]
+FeeFactsFn = Callable[[HybridExecutionContext], Awaitable[dict[str, Any]]]
 SynthesizeFn = Callable[[str, list[RetrieveResponseItem], dict[str, Any], str], Awaitable[tuple[str, list[str], str]]]
 
 
 class HybridGraphState(TypedDict, total=False):
-    payload: HybridAnswerRequest
+    payload: HybridExecutionContext
     intent: str
     retrieved_items: list[RetrieveResponseItem]
     business_facts: dict[str, Any]
@@ -27,7 +49,7 @@ class HybridGraphState(TypedDict, total=False):
 
 
 async def run_hybrid_workflow(
-    payload: HybridAnswerRequest,
+    payload: HybridExecutionContext,
     retrieve_fn: RetrieveFn,
     classify_fn: ClassifyFn,
     arrears_facts_fn: ArrearsFactsFn,

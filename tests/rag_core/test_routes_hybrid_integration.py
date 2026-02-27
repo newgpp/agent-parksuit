@@ -112,11 +112,11 @@ async def test_hybrid_answer_fee_verify_should_combine_tool_facts_and_rag(
         return ("结论：订单金额与模拟金额不一致，需人工复核。", ["核验结果不一致"], "deepseek-chat")
 
     monkeypatch.setattr(
-        "agent_parksuite_rag_core.services.hybrid_answering.BizApiClient.get_parking_order",
+        "agent_parksuite_rag_core.clients.biz_api_client.BizApiClient.get_parking_order",
         _fake_get_parking_order,
     )
     monkeypatch.setattr(
-        "agent_parksuite_rag_core.services.hybrid_answering.BizApiClient.simulate_billing",
+        "agent_parksuite_rag_core.clients.biz_api_client.BizApiClient.simulate_billing",
         _fake_simulate_billing,
     )
     monkeypatch.setattr(
@@ -207,7 +207,7 @@ async def test_hybrid_answer_arrears_check_should_call_biz_tool(
         return ("结论：该车牌存在欠费记录。", ["命中欠费订单"], "deepseek-chat")
 
     monkeypatch.setattr(
-        "agent_parksuite_rag_core.services.hybrid_answering.BizApiClient.get_arrears_orders",
+        "agent_parksuite_rag_core.clients.biz_api_client.BizApiClient.get_arrears_orders",
         _fake_get_arrears_orders,
     )
     monkeypatch.setattr(

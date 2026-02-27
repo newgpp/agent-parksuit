@@ -22,7 +22,7 @@ async def test_hybrid_should_not_auto_carry_order_no_from_previous_turn(
         return ("缺少订单号，无法核验。", ["请提供order_no"], "deepseek-chat")
 
     monkeypatch.setattr(
-        "agent_parksuite_rag_core.services.hybrid_answering.BizApiClient.get_arrears_orders",
+        "agent_parksuite_rag_core.clients.biz_api_client.BizApiClient.get_arrears_orders",
         _fake_get_arrears_orders,
     )
     monkeypatch.setattr(
@@ -61,7 +61,7 @@ async def test_hybrid_should_not_auto_carry_order_no_from_previous_turn(
     assert resp2.status_code == 200
     body2 = resp2.json()
     assert body2["session_id"] == "rag009-ses-carry-001"
-    assert body2["business_facts"]["error"] == "order_reference_needs_clarification"
+    assert body2["business_facts"]["error"] == "missing_order_no"
     assert not any("memory_hydrate:order_no" in item for item in body2["graph_trace"])
 
 
@@ -101,7 +101,7 @@ async def test_hybrid_should_not_carry_memory_across_sessions(
         return ("存在欠费订单。", ["命中欠费单"], "deepseek-chat")
 
     monkeypatch.setattr(
-        "agent_parksuite_rag_core.services.hybrid_answering.BizApiClient.get_arrears_orders",
+        "agent_parksuite_rag_core.clients.biz_api_client.BizApiClient.get_arrears_orders",
         _fake_get_arrears_orders,
     )
     monkeypatch.setattr(
@@ -140,9 +140,9 @@ async def test_hybrid_should_not_carry_memory_across_sessions(
     assert resp2.status_code == 200
     body2 = resp2.json()
     assert body2["session_id"] == "rag009-ses-iso-B"
-    assert body2["business_facts"]["error"] == "order_reference_needs_clarification"
+    assert body2["business_facts"]["error"] == "missing_order_no"
     assert "slot_hydrate:none" in body2["graph_trace"]
-    assert "react_clarify_gate:order_reference" in body2["graph_trace"]
+    assert "react_clarify_gate_async:order_reference" in body2["graph_trace"]
 
 
 @pytest.mark.anyio
@@ -160,7 +160,7 @@ async def test_hybrid_should_short_circuit_when_arrears_check_missing_plate_no(
         return ("占位", [], "deepseek-chat")
 
     monkeypatch.setattr(
-        "agent_parksuite_rag_core.services.hybrid_answering.BizApiClient.get_arrears_orders",
+        "agent_parksuite_rag_core.clients.biz_api_client.BizApiClient.get_arrears_orders",
         _fake_get_arrears_orders,
     )
     monkeypatch.setattr(
@@ -184,5 +184,5 @@ async def test_hybrid_should_short_circuit_when_arrears_check_missing_plate_no(
     assert resp.status_code == 200
     body = resp.json()
     assert body["business_facts"]["error"] == "missing_plate_no"
-    assert "react_clarify_gate:missing_required_slots:plate_no" in body["graph_trace"]
+    assert "react_clarify_gate_async:short_circuit:missing_plate_no" in body["graph_trace"]
     assert called["arrears_called"] is False

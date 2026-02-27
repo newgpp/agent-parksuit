@@ -12,9 +12,34 @@ from agent_parksuite_rag_core.services.answering import generate_hybrid_answer
 from agent_parksuite_rag_core.services.memory import SessionMemoryState, get_session_memory_repo
 from agent_parksuite_rag_core.services.intent_slot_resolver import resolve_turn_context_async
 from agent_parksuite_rag_core.tools.biz_fact_tools import BizExecutionContext, BizFactTools
-from agent_parksuite_rag_core.workflows.hybrid_answer import HybridGraphState, run_hybrid_workflow
+from agent_parksuite_rag_core.workflows.hybrid_answer import (
+    HybridExecutionContext,
+    HybridGraphState,
+    run_hybrid_workflow,
+)
 
-RetrieveFn = Callable[[HybridAnswerRequest], Awaitable[list[RetrieveResponseItem]]]
+RetrieveFn = Callable[[HybridExecutionContext], Awaitable[list[RetrieveResponseItem]]]
+
+
+def _to_execution_context(payload: HybridAnswerRequest, resolved_intent: str | None) -> HybridExecutionContext:
+    return HybridExecutionContext(
+        query=payload.query,
+        intent_hint=resolved_intent or payload.intent_hint,
+        query_embedding=payload.query_embedding,
+        top_k=payload.top_k,
+        doc_type=payload.doc_type,
+        source_type=payload.source_type,
+        city_code=payload.city_code,
+        lot_code=payload.lot_code,
+        at_time=payload.at_time,
+        source_ids=payload.source_ids,
+        include_inactive=payload.include_inactive,
+        plate_no=payload.plate_no,
+        order_no=payload.order_no,
+        rule_code=payload.rule_code,
+        entry_time=payload.entry_time,
+        exit_time=payload.exit_time,
+    )
 
 
 async def _persist_session_memory(
@@ -74,7 +99,7 @@ async def _persist_session_memory(
     await repo.save_session(session_id, new_state, settings.memory_ttl_seconds)
 
 
-async def _classify_intent(payload: HybridAnswerRequest) -> str:
+async def _classify_intent(payload: HybridExecutionContext) -> str:
     # Intent authority is resolver/ReAct stage; hybrid workflow consumes resolved intent only.
     if payload.intent_hint in {"rule_explain", "arrears_check", "fee_verify"}:
         logger.info("hybrid classify source=resolver_resolved_intent intent={}", payload.intent_hint)
@@ -94,6 +119,7 @@ async def run_hybrid_answering(
     resolved = await resolve_turn_context_async(payload=payload, memory_state=memory_state)
     payload = resolved.payload
     resolved_intent = resolved.resolved_intent
+    execution_ctx = _to_execution_context(payload, resolved_intent)
     resolved_slots_ctx = (resolved.execution_context.slots if resolved.execution_context else {})
     memory_trace: list[str] = resolved.memory_trace
     if resolved.decision in {"clarify_short_circuit", "clarify_react", "clarify_abort"} and resolved.clarify_reason:
@@ -143,21 +169,32 @@ async def run_hybrid_answering(
     )
     biz_client = get_biz_client()
     fact_tools = BizFactTools(biz_client=biz_client)
-    biz_execution_ctx = BizExecutionContext(
-        city_code=payload.city_code,
-        lot_code=payload.lot_code,
-        plate_no=payload.plate_no,
-        order_no=payload.order_no,
-        rule_code=payload.rule_code,
-        entry_time=payload.entry_time,
-        exit_time=payload.exit_time,
-    )
 
-    async def _arrears_facts_fn(p: HybridAnswerRequest) -> dict[str, Any]:
-        return await fact_tools.build_arrears_facts(biz_execution_ctx)
+    async def _arrears_facts_fn(p: HybridExecutionContext) -> dict[str, Any]:
+        return await fact_tools.build_arrears_facts(
+            BizExecutionContext(
+                city_code=p.city_code,
+                lot_code=p.lot_code,
+                plate_no=p.plate_no,
+                order_no=p.order_no,
+                rule_code=p.rule_code,
+                entry_time=p.entry_time,
+                exit_time=p.exit_time,
+            )
+        )
 
-    async def _fee_facts_fn(p: HybridAnswerRequest) -> dict[str, Any]:
-        return await fact_tools.build_fee_verify_facts(biz_execution_ctx)
+    async def _fee_facts_fn(p: HybridExecutionContext) -> dict[str, Any]:
+        return await fact_tools.build_fee_verify_facts(
+            BizExecutionContext(
+                city_code=p.city_code,
+                lot_code=p.lot_code,
+                plate_no=p.plate_no,
+                order_no=p.order_no,
+                rule_code=p.rule_code,
+                entry_time=p.entry_time,
+                exit_time=p.exit_time,
+            )
+        )
 
     async def _synthesize_fn(
         query: str,
@@ -172,13 +209,13 @@ async def run_hybrid_answering(
             intent=intent,
         )
 
-    async def _classify_fn(p: HybridAnswerRequest) -> str:
+    async def _classify_fn(p: HybridExecutionContext) -> str:
         if resolved_intent in {"rule_explain", "arrears_check", "fee_verify"}:
             return resolved_intent
         return await _classify_intent(p)
 
     result = await run_hybrid_workflow(
-        payload=payload,
+        payload=execution_ctx,
         retrieve_fn=retrieve_fn,
         classify_fn=_classify_fn,
         arrears_facts_fn=_arrears_facts_fn,
