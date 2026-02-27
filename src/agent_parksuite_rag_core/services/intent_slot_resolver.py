@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 import json
 from dataclasses import dataclass
@@ -17,7 +18,6 @@ from agent_parksuite_rag_core.services.react_clarify_gate import react_clarify_g
 
 _ORDER_NO_PATTERN = re.compile(r"\bSCN-\d+\b", re.IGNORECASE)
 _ORDER_REF_TOKENS = ("上一单", "上一笔", "这笔", "这单", "第一笔")
-_FIRST_ORDER_REF_TOKENS = ("第一笔", "第一单")
 _VALID_INTENTS = {"rule_explain", "arrears_check", "fee_verify"}
 _SLOT_KEYS = ("city_code", "lot_code", "plate_no", "order_no", "at_time")
 _MEMORY_HYDRATE_KEYS = ("city_code", "lot_code", "plate_no")
@@ -110,10 +110,6 @@ def _extract_order_no_from_query(query: str) -> str | None:
 
 def _wants_order_reference(query: str) -> bool:
     return any(token in query for token in _ORDER_REF_TOKENS)
-
-
-def _wants_first_order_reference(query: str) -> bool:
-    return any(token in query for token in _FIRST_ORDER_REF_TOKENS)
 
 
 def _required_slots_for_intent(intent: str | None) -> tuple[str, ...]:
@@ -338,70 +334,11 @@ def _slot_hydrate(
     )
 
 
-def _react_clarify_gate(
-    parse_result: IntentSlotParseResult,
-    hydrate_result: SlotHydrateResult,
-) -> tuple[str | None, str | None, list[str]]:
-    # Step-3: react_clarify_gate
-    # 澄清门控占位：决定是否需要进入后续ReAct澄清链路。
-    # PR-1阶段仅保留已上线的订单指代短路，其余场景先透传。
-    trace: list[str] = []
-    if "order_reference" in parse_result.ambiguities and hydrate_result.payload.order_no is None:
-        trace.append("react_clarify_gate:order_reference")
-        if _wants_first_order_reference(hydrate_result.payload.query):
-            return (
-                "检测到“第一笔”订单指代，请明确订单号（order_no）后再核验金额。",
-                "order_reference_needs_clarification",
-                trace,
-            )
-        return (
-            "检测到订单指代，请明确订单号（order_no）后再核验金额。",
-            "order_reference_needs_clarification",
-            trace,
-        )
-    if hydrate_result.missing_required_slots:
-        missing = hydrate_result.missing_required_slots
-        trace.append(f"react_clarify_gate:missing_required_slots:{','.join(missing)}")
-        if "order_no" in missing:
-            return (
-                "请提供要核验的订单号（order_no，例如 SCN-020）。",
-                "missing_order_no",
-                trace,
-            )
-        if "plate_no" in missing:
-            return (
-                "请提供要查询欠费的车牌号（plate_no，例如 沪A12345）。",
-                "missing_plate_no",
-                trace,
-            )
-        return ("请补充必要信息后继续。", "missing_required_slots", trace)
-    if parse_result.intent is None:
-        # PR-1框架阶段: 仅记录状态，继续沿用现有意图分类链路，不做短路。
-        trace.append("react_clarify_gate:pending_intent_passthrough")
-    return None, None, trace or ["react_clarify_gate:pass"]
-
-
 def resolve_turn_context(
     payload: HybridAnswerRequest,
     memory_state: SessionMemoryState | None,
 ) -> ResolvedTurnContext:
-    # Resolver 主入口：固定编排三阶段
-    # intent_slot_parse -> slot_hydrate -> react_clarify_gate
-    parse_result = _intent_slot_parse_deterministic(payload=payload)
-    hydrate_result = _slot_hydrate(parse_result=parse_result, payload=parse_result.payload, memory_state=memory_state)
-    clarify_reason, clarify_error, gate_trace = _react_clarify_gate(
-        parse_result=parse_result,
-        hydrate_result=hydrate_result,
-    )
-    trace = [*parse_result.trace, *hydrate_result.trace, *gate_trace]
-    decision: ResolverDecision = "clarify_biz" if clarify_reason else "continue_business"
-    return ResolvedTurnContext(
-        payload=hydrate_result.payload,
-        decision=decision,
-        memory_trace=trace,
-        clarify_reason=clarify_reason,
-        clarify_error=clarify_error,
-    )
+    return asyncio.run(resolve_turn_context_async(payload=payload, memory_state=memory_state))
 
 
 async def resolve_turn_context_async(

@@ -28,6 +28,10 @@ async def react_clarify_gate_async(
     list[str],
     list[dict[str, Any]] | None,
 ]:
+    # Step-3: react_clarify_gate
+    # ReAct澄清编排阶段：当 Step-1/Step-2 仍无法收敛时进入，
+    # 通过澄清问答（可含工具调用）输出 continue_business/clarify_react/clarify_abort；
+    # 若ReAct执行异常，回退到确定性 clarify_biz 提示，避免中断主链路。
     trace: list[str] = []
     need_react = bool(hydrate_result.missing_required_slots) or parse_result.intent is None
     if "order_reference" in parse_result.ambiguities and hydrate_result.payload.order_no is None:
@@ -43,14 +47,52 @@ async def react_clarify_gate_async(
         if required_slots_override
         else list(required_slots_for_intent(parse_result.intent))
     )
-    react_result = await run_clarify_react_once(
-        payload=hydrate_result.payload,
-        llm_factory=llm_factory,
-        required_slots=required_slots,
-        memory_state=memory_state,
-        tools=[],
-        max_rounds=max_rounds,
-    )
+    try:
+        react_result = await run_clarify_react_once(
+            payload=hydrate_result.payload,
+            llm_factory=llm_factory,
+            required_slots=required_slots,
+            memory_state=memory_state,
+            tools=[],
+            max_rounds=max_rounds,
+        )
+    except Exception:
+        missing = list(hydrate_result.missing_required_slots)
+        if parse_result.intent is None:
+            return (
+                "clarify_biz",
+                hydrate_result.payload,
+                "请先确认你的问题类型：规则解释、欠费查询，还是订单金额核验？",
+                "missing_intent",
+                [*trace, "react_clarify_gate_async:fallback:react_error:intent"],
+                None,
+            )
+        if "order_no" in missing:
+            return (
+                "clarify_biz",
+                hydrate_result.payload,
+                "请提供要核验的订单号（order_no，例如 SCN-020）。",
+                "missing_order_no",
+                [*trace, "react_clarify_gate_async:fallback:react_error:order_no"],
+                None,
+            )
+        if "plate_no" in missing:
+            return (
+                "clarify_biz",
+                hydrate_result.payload,
+                "请提供要查询欠费的车牌号（plate_no，例如 沪A12345）。",
+                "missing_plate_no",
+                [*trace, "react_clarify_gate_async:fallback:react_error:plate_no"],
+                None,
+            )
+        return (
+            "clarify_biz",
+            hydrate_result.payload,
+            "请补充必要信息后继续。",
+            "missing_required_slots",
+            [*trace, "react_clarify_gate_async:fallback:react_error:generic"],
+            None,
+        )
     react_decision = str(react_result.get("decision", "clarify_react"))
     react_messages = react_result.get("messages")
     react_trace = list(react_result.get("trace", []))
