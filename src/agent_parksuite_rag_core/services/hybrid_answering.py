@@ -11,7 +11,7 @@ from agent_parksuite_rag_core.schemas.retrieve import RetrieveResponseItem
 from agent_parksuite_rag_core.services.answering import generate_hybrid_answer
 from agent_parksuite_rag_core.services.memory import SessionMemoryState, get_session_memory_repo
 from agent_parksuite_rag_core.services.intent_slot_resolver import resolve_turn_context_async
-from agent_parksuite_rag_core.tools.biz_fact_tools import BizFactTools
+from agent_parksuite_rag_core.tools.biz_fact_tools import BizExecutionContext, BizFactTools
 from agent_parksuite_rag_core.workflows.hybrid_answer import HybridGraphState, run_hybrid_workflow
 
 RetrieveFn = Callable[[HybridAnswerRequest], Awaitable[list[RetrieveResponseItem]]]
@@ -143,12 +143,21 @@ async def run_hybrid_answering(
     )
     biz_client = get_biz_client()
     fact_tools = BizFactTools(biz_client=biz_client)
+    biz_execution_ctx = BizExecutionContext(
+        city_code=payload.city_code,
+        lot_code=payload.lot_code,
+        plate_no=payload.plate_no,
+        order_no=payload.order_no,
+        rule_code=payload.rule_code,
+        entry_time=payload.entry_time,
+        exit_time=payload.exit_time,
+    )
 
     async def _arrears_facts_fn(p: HybridAnswerRequest) -> dict[str, Any]:
-        return await fact_tools.build_arrears_facts(p)
+        return await fact_tools.build_arrears_facts(biz_execution_ctx)
 
     async def _fee_facts_fn(p: HybridAnswerRequest) -> dict[str, Any]:
-        return await fact_tools.build_fee_verify_facts(p)
+        return await fact_tools.build_fee_verify_facts(biz_execution_ctx)
 
     async def _synthesize_fn(
         query: str,
