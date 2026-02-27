@@ -66,9 +66,6 @@ async def _persist_session_memory(
     clarify_messages = facts.get("clarify_messages")
     if isinstance(clarify_messages, list):
         new_state["clarify_messages"] = clarify_messages
-    clarify_tool_trace = facts.get("clarify_tool_trace")
-    if isinstance(clarify_tool_trace, list):
-        new_state["clarify_tool_trace"] = clarify_tool_trace
     pending_clarification = facts.get("pending_clarification")
     if isinstance(pending_clarification, dict):
         new_state["pending_clarification"] = pending_clarification

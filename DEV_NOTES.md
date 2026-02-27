@@ -634,6 +634,9 @@
   - PR-C progress:
     - introduced internal `ResolvedExecutionContext` (intent + slots + field_sources)
     - short-circuit branch now reads resolved slots from execution context instead of direct payload introspection
+  - PR-D progress:
+    - removed `clarify_tool_trace` persistence from session memory
+    - keep runtime/debug response tool trace, but do not store it in memory state
 
 #### RAG-010 PR-3 Design (ReAct Clarification Loop)
 - Goal alignment:

@@ -11,8 +11,6 @@ class SessionMemoryState(TypedDict, total=False):
     turns: list[dict[str, Any]]
     # ReAct澄清消息历史（system/user/assistant/tool）
     clarify_messages: list[dict[str, Any]]
-    # ReAct工具调用轨迹（调试用途）
-    clarify_tool_trace: list[dict[str, Any]]
     # 待澄清上下文（用于下一轮续接）
     pending_clarification: dict[str, Any]
     # 已确认/已校验槽位
