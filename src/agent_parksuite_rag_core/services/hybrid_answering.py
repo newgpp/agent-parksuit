@@ -2,39 +2,19 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from loguru import logger
 
 from agent_parksuite_rag_core.clients.biz_api_client import get_biz_client
-from agent_parksuite_rag_core.clients.llm_client import get_chat_llm
 from agent_parksuite_rag_core.config import settings
 from agent_parksuite_rag_core.schemas.answer import HybridAnswerRequest
 from agent_parksuite_rag_core.schemas.retrieve import RetrieveResponseItem
-from agent_parksuite_rag_core.services.answering import _extract_json_payload, generate_hybrid_answer
+from agent_parksuite_rag_core.services.answering import generate_hybrid_answer
 from agent_parksuite_rag_core.services.memory import SessionMemoryState, get_session_memory_repo
 from agent_parksuite_rag_core.services.intent_slot_resolver import resolve_turn_context_async
 from agent_parksuite_rag_core.tools.biz_fact_tools import BizFactTools
 from agent_parksuite_rag_core.workflows.hybrid_answer import HybridGraphState, run_hybrid_workflow
 
 RetrieveFn = Callable[[HybridAnswerRequest], Awaitable[list[RetrieveResponseItem]]]
-
-
-def _log_payload_text(text: str) -> str:
-    if settings.llm_log_full_payload:
-        return text
-    return text[: settings.llm_log_max_chars]
-
-
-def _rule_route_intent(payload: HybridAnswerRequest) -> str:
-    if payload.intent_hint in {"rule_explain", "arrears_check", "fee_verify"}:
-        return payload.intent_hint
-
-    query = payload.query
-    if payload.order_no or any(token in query for token in ("核验", "一致", "算错", "金额", "订单")):
-        return "fee_verify"
-    if payload.plate_no or any(token in query for token in ("欠费", "补缴", "未缴", "车牌")):
-        return "arrears_check"
-    return "rule_explain"
 
 
 async def _persist_session_memory(
@@ -98,62 +78,13 @@ async def _persist_session_memory(
 
 
 async def _classify_intent(payload: HybridAnswerRequest) -> str:
+    # Intent authority is resolver/ReAct stage; hybrid workflow consumes resolved intent only.
     if payload.intent_hint in {"rule_explain", "arrears_check", "fee_verify"}:
-        logger.info("hybrid classify source=intent_hint intent={}", payload.intent_hint)
+        logger.info("hybrid classify source=resolver_resolved_intent intent={}", payload.intent_hint)
         return payload.intent_hint
 
-    if not settings.deepseek_api_key:
-        intent = _rule_route_intent(payload)
-        logger.info("hybrid classify source=rule_fallback reason=no_api_key intent={}", intent)
-        return intent
-
-    llm = get_chat_llm(temperature=0, timeout_seconds=8)
-
-    messages = [
-        SystemMessage(
-            content=(
-                "你是停车业务意图分类器。"
-                '请只输出JSON: {"intent": "rule_explain|arrears_check|fee_verify"}。'
-                "不要输出其他字段。"
-            )
-        ),
-        HumanMessage(
-            content=(
-                "根据用户问题选择一个最合适意图:\n"
-                "- rule_explain: 解释计费规则/政策\n"
-                "- arrears_check: 查询是否欠费/欠费订单\n"
-                "- fee_verify: 针对订单金额核验、重算、对账\n\n"
-                f"用户问题: {payload.query}"
-            )
-        ),
-    ]
-    logger.info("llm[intent] input query={}", payload.query[:200])
-    logger.info("llm[intent] input_prompt={}", _log_payload_text(messages[1].content))
-
-    try:
-        result = await llm.ainvoke(messages)
-    except Exception as exc:
-        intent = _rule_route_intent(payload)
-        logger.warning(
-            "hybrid classify source=rule_fallback reason=llm_error intent={} error={}",
-            intent,
-            exc.__class__.__name__,
-        )
-        return intent
-
-    raw_text = str(result.content)
-    logger.info("llm[intent] output raw={}", _log_payload_text(raw_text))
-    parsed = _extract_json_payload(raw_text)
-    intent = str((parsed or {}).get("intent", "")).strip()
-    if intent in {"rule_explain", "arrears_check", "fee_verify"}:
-        logger.info("hybrid classify source=llm intent={}", intent)
-        return intent
-    fallback_intent = _rule_route_intent(payload)
-    logger.info(
-        "hybrid classify source=rule_fallback reason=invalid_output intent={}",
-        fallback_intent,
-    )
-    return fallback_intent
+    logger.warning("hybrid classify source=resolver_fallback intent=rule_explain")
+    return "rule_explain"
 
 
 async def run_hybrid_answering(
@@ -165,9 +96,10 @@ async def run_hybrid_answering(
         memory_state = await get_session_memory_repo().get_session(payload.session_id)
     resolved = await resolve_turn_context_async(payload=payload, memory_state=memory_state)
     payload = resolved.payload
+    resolved_intent = resolved.resolved_intent
     memory_trace: list[str] = resolved.memory_trace
     if resolved.decision in {"clarify_short_circuit", "clarify_react", "clarify_abort"} and resolved.clarify_reason:
-        clarified_intent = payload.intent_hint or ""
+        clarified_intent = resolved_intent or payload.intent_hint or ""
         clarify_error = resolved.clarify_error or "clarification_required"
         key_points = ["请提供明确的订单号（order_no），例如 SCN-020。"]
         if clarify_error == "missing_plate_no":
@@ -234,6 +166,8 @@ async def run_hybrid_answering(
         )
 
     async def _classify_fn(p: HybridAnswerRequest) -> str:
+        if resolved_intent in {"rule_explain", "arrears_check", "fee_verify"}:
+            return resolved_intent
         return await _classify_intent(p)
 
     result = await run_hybrid_workflow(

@@ -43,6 +43,8 @@ class ResolvedTurnContext:
     clarify_messages: list[dict[str, Any]] | None = None
     # ReAct工具调用轨迹（用于调试/验收）
     clarify_tool_trace: list[dict[str, Any]] | None = None
+    # resolver 阶段产出的最终意图（作为下游业务流的单一意图来源）
+    resolved_intent: str | None = None
 
 
 @dataclass(frozen=True)
@@ -349,15 +351,19 @@ async def resolve_turn_context_async(
         llm_factory=lambda: get_chat_llm(temperature=0, timeout_seconds=8),
         required_slots_for_intent=_required_slots_for_intent,
     )
+    payload_out = gate_result.payload
+    if parse_result.intent in _VALID_INTENTS:
+        payload_out = payload_out.model_copy(update={"intent_hint": parse_result.intent})
     trace = [*parse_result.trace, *hydrate_result.trace, *gate_result.trace]
     return ResolvedTurnContext(
-        payload=gate_result.payload,
+        payload=payload_out,
         decision=gate_result.decision,
         memory_trace=trace,
         clarify_reason=gate_result.clarify_reason,
         clarify_error=gate_result.clarify_error,
         clarify_messages=gate_result.clarify_messages,
         clarify_tool_trace=gate_result.tool_trace,
+        resolved_intent=parse_result.intent if parse_result.intent in _VALID_INTENTS else None,
     )
 
 
@@ -384,11 +390,14 @@ async def debug_clarify_react(
         required_slots_override=required_slots,
         max_rounds=max_rounds,
     )
-    resolved_slots = build_request_slots(gate_result.payload)
+    payload_out = gate_result.payload
+    if parse_result.intent in _VALID_INTENTS:
+        payload_out = payload_out.model_copy(update={"intent_hint": parse_result.intent})
+    resolved_slots = build_request_slots(payload_out)
     missing_required_slots = [
         slot
         for slot in (required_slots or list(_required_slots_for_intent(parse_result.intent)))
-        if getattr(gate_result.payload, slot, None) is None
+        if getattr(payload_out, slot, None) is None
     ]
     trace = [*parse_result.trace, *hydrate_result.trace, *gate_result.trace]
     return ClarifyReactDebugResult(
@@ -400,6 +409,6 @@ async def debug_clarify_react(
         trace=trace,
         tool_trace=gate_result.tool_trace or [],
         messages=gate_result.clarify_messages or [],
-        parsed_payload=gate_result.payload,
+        parsed_payload=payload_out,
         intent=parse_result.intent,
     )

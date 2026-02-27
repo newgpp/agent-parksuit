@@ -625,6 +625,12 @@
     - `fee_verify` missing `order_no` -> `clarify_biz`
     - `arrears_check` missing `plate_no` -> `clarify_biz`
   - route keeps backward-compatible response schema; short-circuit surfaced via `business_facts.error`
+  - PR-A progress:
+    - resolver chain now runs for all hybrid requests (with or without `session_id`)
+    - `session_id` only controls memory read/write path
+  - PR-B progress:
+    - downstream hybrid classifier now consumes resolver-resolved intent first
+    - removed LLM-based second intent arbitration in `hybrid_answering`
 
 #### RAG-010 PR-3 Design (ReAct Clarification Loop)
 - Goal alignment:
