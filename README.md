@@ -8,7 +8,7 @@
 - 可观测性到位：`X-Trace-Id` 跨服务透传、结构化日志、`graph_trace` 可追踪执行分支。
 - 多轮短期记忆与澄清子Agent已落地（`RAG-009` + `RAG-011`）：支持槽位继承、ReAct澄清、会话续接，且澄清过程数据与业务返回解耦。
 
-### Hybrid Resolve & Clarify Pipeline
+## Hybrid Resolve & Clarify Pipeline
 ```mermaid
 flowchart TD
     A["POST /api/v1/answer/hybrid"] --> M["load_session_memory<br/>if session_id"]
@@ -68,7 +68,6 @@ flowchart TD
 
 ## Core API Capabilities
 
-### `/api/v1/answer/hybrid` Flow
 ### Biz API
 - `POST /api/v1/billing-rules` upsert billing rule
 - `GET /api/v1/billing-rules` list billing rules
