@@ -124,10 +124,11 @@ def _normalize_react_result(
     hydrate_result: Any,
     trace: list[str],
     react_result: ClarifyResult,
+    include_debug_trace: bool,
 ) -> ReactClarifyGateResult:
     react_decision = react_result.decision
     react_messages = react_result.messages
-    react_tool_trace = react_result.tool_trace
+    react_tool_trace = react_result.tool_trace if include_debug_trace else []
     react_trace = react_result.trace
     merged_payload = hydrate_result.payload.model_copy(update=dict(react_result.resolved_slots))
     react_missing = list(react_result.missing_required_slots)
@@ -183,6 +184,7 @@ async def react_clarify_gate_async(
     required_slots_override: list[str] | None = None,
     max_rounds: int = 3,
     clarify_agent: ClarifyAgent | None = None,
+    include_debug_trace: bool = False,
 ) -> ReactClarifyGateResult:
     # Step-3: react_clarify_gate
     # ReAct澄清编排阶段：当 Step-1/Step-2 仍无法收敛时进入，
@@ -224,6 +226,7 @@ async def react_clarify_gate_async(
         parse_result=parse_result,
         hydrate_result=hydrate_result,
         trace=trace,
+        include_debug_trace=include_debug_trace,
         react_result=react_result
         or ClarifyResult(
             decision="clarify_react",

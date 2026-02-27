@@ -794,6 +794,9 @@
   - PR-4: production/debug path separation
     - production returns stable decision payload only
     - debug endpoints fetch optional deep traces from sub-agent debug adapter
+    - in progress:
+      - `react_clarify_gate_async` added `include_debug_trace` switch
+      - production call path defaults to no tool trace; debug clarify path enables it explicitly
   - PR-5: cleanup + migration
     - delete obsolete fields/branches and update replay scripts/tests
 - Acceptance:

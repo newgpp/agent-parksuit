@@ -412,6 +412,7 @@ async def debug_clarify_react(
         required_slots_for_intent=_required_slots_for_intent,
         required_slots_override=required_slots,
         max_rounds=max_rounds,
+        include_debug_trace=True,
     )
     payload_out = gate_result.payload
     if parse_result.intent in _VALID_INTENTS:
