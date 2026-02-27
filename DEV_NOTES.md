@@ -503,10 +503,9 @@
     - `src/agent_parksuite_rag_core/services/memory.py`
     - pluggable session memory repository interface + in-memory TTL implementation
   - workflow integration (`run_hybrid_answering`):
-    - `memory_hydrate`: carry-over slots (`city_code/lot_code/plate_no/order_no`) and `intent_hint`
-    - reference resolution for follow-up (`这笔/上一单`) with deterministic behavior
-    - ambiguity guard: multiple candidate orders -> ask clarification, no blind selection
-    - `memory_persist`: persist intent/slots/order candidates/turn summary after each turn
+    - `memory_hydrate`: carry-over slots (`city_code/lot_code/plate_no/order_no`)
+    - reference handling for follow-up (`这笔/上一单`) by clarification short-circuit
+    - `memory_persist`: persist slots/turn summary after each turn
   - tests:
     - `tests/rag_core/test_routes_hybrid_memory_integration.py`
     - covers same-session order carry-over and cross-session isolation
@@ -593,6 +592,10 @@
     - remove `last_intent` and `order_candidates` from `SessionMemoryState`
     - remove automatic intent carry-over and candidate-based order reference resolution
     - keep only deterministic slot carry-over and explicit clarification short-circuit
+  - PR-1c: remove pre-ReAct quick intent inference in resolver
+    - remove `_apply_memory_hydrate` quick intent forcing (`intent_hint` writeback)
+    - keep resolver focused on slot hydrate and clarification gating only
+    - ensure intent authority is unified in ReAct intent decision stage
   - PR-2: one-shot LLM resolve
     - add prompt + parser + short-circuit decision object
     - start shrinking `HybridAnswerRequest` surface (deprecate direct business slot inputs)

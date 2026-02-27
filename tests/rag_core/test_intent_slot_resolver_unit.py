@@ -23,7 +23,7 @@ def test_resolve_turn_context_should_short_circuit_when_order_reference_ambiguou
     }
     resolved = resolve_turn_context(payload=payload, memory_state=memory_state)
     assert resolved.decision == "clarify_biz"
-    assert resolved.payload.intent_hint == "fee_verify"
+    assert resolved.payload.intent_hint is None
     assert resolved.clarify_error == "order_reference_needs_clarification"
     assert resolved.clarify_reason is not None
     assert "memory_hydrate:order_reference_needs_clarification" in resolved.memory_trace

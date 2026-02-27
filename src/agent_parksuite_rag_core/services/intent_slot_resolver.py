@@ -48,13 +48,6 @@ def _wants_first_order_reference(query: str) -> bool:
     return any(token in query for token in _FIRST_ORDER_REF_TOKENS)
 
 
-def _looks_like_fee_verify_query(payload: HybridAnswerRequest) -> bool:
-    query = payload.query
-    if payload.order_no:
-        return True
-    return any(token in query for token in ("核验", "一致", "算错", "金额", "复核", "不对"))
-
-
 def _apply_memory_hydrate(
     payload: HybridAnswerRequest,
     memory_state: SessionMemoryState | None,
@@ -70,11 +63,6 @@ def _apply_memory_hydrate(
         if getattr(payload, key) is None and slots.get(key):
             updates[key] = slots[key]
             traces.append(f"memory_hydrate:{key}")
-
-    should_force_fee_verify = _looks_like_fee_verify_query(payload) or _wants_order_reference(payload.query)
-    if should_force_fee_verify and payload.intent_hint not in {"rule_explain", "arrears_check", "fee_verify"}:
-        updates["intent_hint"] = "fee_verify"
-        traces.append("memory_hydrate:intent_hint_fee_verify")
 
     if payload.order_no is None:
         from_query = _extract_order_no_from_query(payload.query)

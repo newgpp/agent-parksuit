@@ -152,11 +152,12 @@ async def run_hybrid_answering(
         payload = resolved.payload
         memory_trace = resolved.memory_trace
         if resolved.decision == "clarify_biz" and resolved.clarify_reason:
+            clarified_intent = payload.intent_hint or ""
             result: HybridGraphState = {
-                "intent": payload.intent_hint or "fee_verify",
+                "intent": clarified_intent,
                 "retrieved_items": [],
                 "business_facts": {
-                    "intent": payload.intent_hint or "fee_verify",
+                    "intent": clarified_intent,
                     "error": resolved.clarify_error or "order_reference_needs_clarification",
                 },
                 "conclusion": resolved.clarify_reason,

@@ -64,7 +64,7 @@ def _evaluate_turn(expect: dict[str, Any], response: dict[str, Any]) -> CheckRes
         )
 
     if memory_expect.get("carry_intent_from") and not _contains_in_trace(trace, "memory_hydrate:intent_hint"):
-        errors.append("missing memory_hydrate:intent_hint trace")
+        errors.append("carry_intent_from is no longer supported in memory_hydrate")
 
     for slot in memory_expect.get("carry_slots", []):
         if not _contains_in_trace(trace, f"memory_hydrate:{slot}"):
@@ -72,17 +72,18 @@ def _evaluate_turn(expect: dict[str, Any], response: dict[str, Any]) -> CheckRes
 
     reference_resolution = str(memory_expect.get("reference_resolution", ""))
     if "上一单->" in reference_resolution:
-        expected = reference_resolution.split("->", 1)[1].strip()
-        if not _contains_in_trace(trace, "memory_hydrate:order_no_from_reference"):
-            errors.append("missing memory_hydrate:order_no_from_reference trace")
-        if str(facts.get("order_no", "")) != expected:
-            errors.append(f"reference order mismatch: expected={expected}, got={facts.get('order_no')}")
+        if str(facts.get("error", "")) != "order_reference_needs_clarification":
+            errors.append(
+                "reference_resolution by memory is removed; expected error=order_reference_needs_clarification"
+            )
+        if not _contains_in_trace(trace, "memory_hydrate:order_reference_needs_clarification"):
+            errors.append("missing memory_hydrate:order_reference_needs_clarification trace")
 
     if memory_expect.get("needs_disambiguation_when_multiple"):
-        if str(facts.get("error", "")) != "order_reference_ambiguous":
-            errors.append(f"expected error=order_reference_ambiguous, got={facts.get('error')}")
-        if not _contains_in_trace(trace, "memory_hydrate:order_reference_ambiguous"):
-            errors.append("missing memory_hydrate:order_reference_ambiguous trace")
+        if str(facts.get("error", "")) != "order_reference_needs_clarification":
+            errors.append(f"expected error=order_reference_needs_clarification, got={facts.get('error')}")
+        if not _contains_in_trace(trace, "memory_hydrate:order_reference_needs_clarification"):
+            errors.append("missing memory_hydrate:order_reference_needs_clarification trace")
 
     if expect.get("must_not_memory_carry"):
         if not _contains_in_trace(trace, "memory_hydrate:none"):
