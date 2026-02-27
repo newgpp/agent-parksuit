@@ -782,6 +782,9 @@
   - PR-2: internal clarify memory encapsulation
     - move clarify message serialization/deserialization into sub-agent module
     - remove direct memory plumbing from route/service layer
+    - implemented:
+      - `run_clarify_react_once` now accepts `history_messages` instead of `memory_state`
+      - clarify history deserialize/serialize moved to `services/clarify_agent.py`
   - PR-3: orchestration simplification
     - `react_clarify_gate_async` consumes `ClarifyAgent` result only
     - remove process-level fields from gate return path where unnecessary

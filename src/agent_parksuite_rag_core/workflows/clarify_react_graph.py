@@ -3,12 +3,11 @@ from __future__ import annotations
 import json
 from typing import Any, Callable, Literal, TypedDict
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.prebuilt import create_react_agent
 from loguru import logger
 
 from agent_parksuite_rag_core.schemas.answer import HybridAnswerRequest
-from agent_parksuite_rag_core.services.memory import SessionMemoryState
 
 ClarifyAction = Literal["ask_user", "finish_clarify", "abort"]
 LLMFactory = Callable[[], Any]
@@ -29,7 +28,7 @@ class ClarifyReactResult(TypedDict, total=False):
     resolved_slots: dict[str, Any]
     missing_required_slots: list[str]
     trace: list[str]
-    messages: list[dict[str, Any]]
+    messages: list[BaseMessage]
     tool_trace: list[dict[str, Any]]
 
 
@@ -91,48 +90,6 @@ def _merge_slots_from_payload(payload: HybridAnswerRequest) -> dict[str, Any]:
     }
 
 
-def _load_history_messages(memory_state: SessionMemoryState | None) -> list[BaseMessage]:
-    if not memory_state:
-        return []
-    raw_messages = memory_state.get("clarify_messages", [])
-    messages: list[BaseMessage] = []
-    for item in raw_messages:
-        if not isinstance(item, dict):
-            continue
-        role = str(item.get("role", "")).strip()
-        content = str(item.get("content", ""))
-        if role == "user":
-            messages.append(HumanMessage(content=content))
-        elif role == "assistant":
-            messages.append(AIMessage(content=content))
-        elif role == "tool":
-            tool_call_id = str(item.get("tool_call_id", ""))
-            if tool_call_id:
-                messages.append(ToolMessage(content=content, tool_call_id=tool_call_id))
-        elif role == "system":
-            messages.append(SystemMessage(content=content))
-    return messages
-
-
-def _dump_history_messages(messages: list[BaseMessage]) -> list[dict[str, Any]]:
-    serialized: list[dict[str, Any]] = []
-    for message in messages:
-        msg_type = getattr(message, "type", "")
-        if msg_type == "human":
-            role = "user"
-        elif msg_type == "ai":
-            role = "assistant"
-        elif msg_type == "tool":
-            role = "tool"
-        else:
-            role = "system"
-        item: dict[str, Any] = {"role": role, "content": str(getattr(message, "content", ""))}
-        if role == "tool":
-            item["tool_call_id"] = str(getattr(message, "tool_call_id", ""))
-        serialized.append(item)
-    return serialized
-
-
 def _extract_tool_trace(messages: list[BaseMessage]) -> list[dict[str, Any]]:
     trace: list[dict[str, Any]] = []
     for message in messages:
@@ -188,7 +145,7 @@ def _build_clarify_result(
         "resolved_slots": resolved_slots,
         "missing_required_slots": _missing_slots(required_slots, resolved_slots),
         "trace": trace,
-        "messages": _dump_history_messages(final_messages),
+        "messages": final_messages,
         "tool_trace": tool_trace,
     }
 
@@ -230,12 +187,12 @@ async def run_clarify_react_once(
     payload: HybridAnswerRequest,
     llm_factory: LLMFactory,
     required_slots: list[str],
-    memory_state: SessionMemoryState | None = None,
+    history_messages: list[BaseMessage] | None = None,
     tools: list[Any] | None = None,
     max_rounds: int = 3,
 ) -> ClarifyReactResult:
     app = build_clarify_react_app(llm_factory=llm_factory, tools=tools or [])
-    history = _load_history_messages(memory_state)
+    history = list(history_messages or [])
     logger.info(
         "clarify_react input session_id={} required_slots={} max_rounds={} history_messages={}",
         payload.session_id,
