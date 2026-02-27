@@ -5,42 +5,8 @@ import pytest
 from agent_parksuite_rag_core.schemas.answer import HybridAnswerRequest
 from agent_parksuite_rag_core.services.intent_slot_resolver import (
     _intent_slot_parse,
-    build_request_slots,
-    resolve_turn_context,
     resolve_turn_context_async,
 )
-
-
-def test_resolve_turn_context_without_memory_keeps_payload() -> None:
-    payload = HybridAnswerRequest(query="解释一下停车费规则")
-    resolved = resolve_turn_context(payload=payload, memory_state=None)
-    assert resolved.decision == "continue_business"
-    assert resolved.payload.query == payload.query
-    assert "intent_slot_parse:deterministic" in resolved.memory_trace
-    assert "slot_hydrate:none" in resolved.memory_trace
-    assert resolved.clarify_reason is None
-
-
-def test_resolve_turn_context_should_short_circuit_when_order_reference_ambiguous() -> None:
-    payload = HybridAnswerRequest(query="这笔订单帮我核验下")
-    memory_state = {"slots": {"city_code": "310100"}}
-    resolved = resolve_turn_context(payload=payload, memory_state=memory_state)
-    assert resolved.decision == "clarify_short_circuit"
-    assert resolved.clarify_error == "order_reference_needs_clarification"
-    assert resolved.clarify_reason is not None
-    assert "react_clarify_gate:order_reference" in resolved.memory_trace
-
-
-def test_build_request_slots_should_not_auto_fill_order_no_from_memory() -> None:
-    payload = HybridAnswerRequest(query="金额不对，帮我复核")
-    memory_state = {"slots": {"city_code": "310100", "plate_no": "沪SCN020"}}
-    resolved = resolve_turn_context(payload=payload, memory_state=memory_state)
-    slots = build_request_slots(resolved.payload)
-    assert resolved.decision == "continue_business"
-    assert slots["city_code"] == "310100"
-    assert slots["plate_no"] == "沪SCN020"
-    assert slots["order_no"] is None
-
 
 @pytest.mark.anyio
 async def test_resolve_turn_context_async_should_use_llm_slots_when_available(

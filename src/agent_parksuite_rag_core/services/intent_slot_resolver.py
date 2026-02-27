@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import re
 import json
 from dataclasses import dataclass
@@ -332,13 +331,6 @@ def _slot_hydrate(
         missing_required_slots=missing_required_slots,
         trace=traces or ["slot_hydrate:hit"],
     )
-
-
-def resolve_turn_context(
-    payload: HybridAnswerRequest,
-    memory_state: SessionMemoryState | None,
-) -> ResolvedTurnContext:
-    return asyncio.run(resolve_turn_context_async(payload=payload, memory_state=memory_state))
 
 
 async def resolve_turn_context_async(
