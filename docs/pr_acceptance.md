@@ -251,3 +251,141 @@ curl -X POST "http://127.0.0.1:8002/api/v1/answer/hybrid" \
 }
 ```
 说明：`time_window.timezone` 可按规则分段单独配置，默认值为 `Asia/Shanghai`。
+
+## 5. RAG-010 调试验收：`_intent_slot_parse`（Step-1 LLM）
+目标：仅验证 resolver Step-1 的 LLM 意图/槽位解析，不进入后续业务工具链路。
+
+### 前置条件
+```bash
+export RAG_DEEPSEEK_API_KEY=your_key
+export RAG_DEEPSEEK_BASE_URL=https://api.deepseek.com
+export RAG_DEEPSEEK_MODEL=deepseek-chat
+uvicorn agent_parksuite_rag_core.main:app --reload --port 8002
+```
+
+### 调试接口
+- `POST /api/v1/debug/intent-slot-parse`
+- 入参：复用 `HybridAnswerRequest`
+- 返回：`intent/intent_confidence/field_sources/missing_required_slots/ambiguities/trace/parsed_payload`
+
+### E2E 用例
+```bash
+# 用例1：fee_verify + 提取 order_no
+curl -X POST "http://127.0.0.1:8002/api/v1/debug/intent-slot-parse" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "请帮我核验订单 SCN-020 金额是否正确"
+  }'
+
+# 用例2：arrears_check 缺 plate_no（应给出缺参信号）
+curl -X POST "http://127.0.0.1:8002/api/v1/debug/intent-slot-parse" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "帮我查下有没有欠费",
+    "intent_hint": "arrears_check"
+  }'
+
+# 用例3：arrears_check 缺 plate_no（应给出缺参信号）
+curl -X POST "http://127.0.0.1:8002/api/v1/debug/intent-slot-parse" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "帮我查下有没有欠费"
+  }'
+
+# 用例4：订单指代歧义（应识别 ambiguity）
+curl -X POST "http://127.0.0.1:8002/api/v1/debug/intent-slot-parse" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "这笔订单帮我核验下"
+  }'
+```
+
+### 验收检查点
+- HTTP 200
+- 返回含 `intent`、`parsed_payload`、`trace`
+- 用例1：`parsed_payload.order_no` 被识别（例如 `SCN-020`）
+- 用例2：`missing_required_slots` 含 `plate_no`
+- 用例3：`ambiguities` 含 `order_reference` 或 `trace` 出现对应解析轨迹
+- 服务日志可观测到：
+  - `llm[intent_slot_parse] input ...`
+  - `llm[intent_slot_parse] output_payload=...`
+  - `llm[intent_slot_parse] parse_result=...`
+
+## 6. RAG-010 PR-3 调试验收：ReAct 澄清循环（Debug API）
+目标：仅验证 resolver 的 ReAct 澄清链路（不进入 hybrid 重业务执行），用于确认多轮澄清历史与工具校验行为。
+
+### 前置条件
+- `rag-core` 已启动：`http://127.0.0.1:8002`
+- 已配置可用 LLM key（DeepSeek/OpenAI 兼容）
+- 使用固定 `session_id` 做多轮请求
+
+### 调试接口
+- `POST /api/v1/debug/clarify-react`
+- 入参（建议）：
+  - `session_id`: 会话ID（必填，用于复用历史）
+  - `query`: 本轮用户输入
+  - `intent`: 可选，当前已识别意图
+  - `required_slots`: 可选，当前意图的必填槽位
+  - `max_rounds`: 可选，默认3
+- 返回（建议）：
+  - `decision`: `clarify_react|continue_business|clarify_abort`
+  - `clarify_question`: 当前要反问用户的问题
+  - `resolved_slots`: 当前已收敛槽位
+  - `missing_required_slots`: 当前仍缺失槽位
+  - `trace`: 调试轨迹
+  - `messages`: 当前累计消息（用于确认历史连续）
+
+### 用例A：首轮缺参触发澄清
+```bash
+curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "RAG010-PR3-DBG-001",
+    "query": "这笔订单帮我核验下",
+    "intent": "fee_verify",
+    "required_slots": ["order_no"]
+  }'
+```
+预期：
+- `decision=clarify_react`
+- `clarify_question` 非空（明确索要 `order_no`）
+
+### 用例B：同会话补参后继续
+```bash
+curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "RAG010-PR3-DBG-001",
+    "query": "订单号是 SCN-020",
+    "intent": "fee_verify",
+    "required_slots": ["order_no"]
+  }'
+```
+预期：
+- `messages` 包含上一轮问答历史（非空且增长）
+- `resolved_slots.order_no=SCN-020`（或 canonical 值）
+- `decision` 可转为 `continue_business`（若校验通过）
+
+### 用例C：参数无效触发工具校验后再澄清
+```bash
+curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "RAG010-PR3-DBG-002",
+    "query": "订单号是 SCN-999",
+    "intent": "fee_verify",
+    "required_slots": ["order_no"]
+  }'
+```
+预期：
+- 保持 `decision=clarify_react`（或最终 `clarify_abort`）
+- `clarify_question` 明确提示参数无效并要求重新提供
+
+### 验收检查点
+- 同一 `session_id` 下 `messages` 连续累积，支持多轮澄清回放
+- 决策符合：`clarify_react -> continue_business` 或 `clarify_abort`
+- 必填槽位与工具校验未通过前，不应返回“可执行业务”结论
+- 日志可观测：
+  - `clarify_react:start`
+  - `clarify_react:agent:*`
+  - `clarify_react result decision=...`

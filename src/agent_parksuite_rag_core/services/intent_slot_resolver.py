@@ -13,6 +13,7 @@ from agent_parksuite_rag_core.clients.llm_client import get_chat_llm
 from agent_parksuite_rag_core.config import settings
 from agent_parksuite_rag_core.schemas.answer import HybridAnswerRequest
 from agent_parksuite_rag_core.services.memory import SessionMemoryState
+from agent_parksuite_rag_core.services.react_clarify_gate import react_clarify_gate_async
 
 _ORDER_NO_PATTERN = re.compile(r"\bSCN-\d+\b", re.IGNORECASE)
 _ORDER_REF_TOKENS = ("上一单", "上一笔", "这笔", "这单", "第一笔")
@@ -21,7 +22,7 @@ _VALID_INTENTS = {"rule_explain", "arrears_check", "fee_verify"}
 _SLOT_KEYS = ("city_code", "lot_code", "plate_no", "order_no", "at_time")
 _MEMORY_HYDRATE_KEYS = ("city_code", "lot_code", "plate_no")
 
-ResolverDecision = Literal["continue_business", "clarify_biz"]
+ResolverDecision = Literal["continue_business", "clarify_biz", "clarify_react", "clarify_abort"]
 FieldSource = Literal["user", "memory", "inferred"]
 
 
@@ -39,6 +40,8 @@ class ResolvedTurnContext:
     clarify_reason: str | None
     # 需要澄清时的结构化错误码
     clarify_error: str | None = None
+    # ReAct澄清链路的消息历史（用于后续多轮续接）
+    clarify_messages: list[dict[str, Any]] | None = None
 
 
 @dataclass(frozen=True)
@@ -73,6 +76,19 @@ class SlotHydrateResult:
     missing_required_slots: list[str]
     # 本阶段轨迹
     trace: list[str]
+
+
+@dataclass(frozen=True)
+class ClarifyReactDebugResult:
+    decision: ResolverDecision
+    clarify_question: str | None
+    clarify_error: str | None
+    resolved_slots: dict[str, Any]
+    missing_required_slots: list[str]
+    trace: list[str]
+    messages: list[dict[str, Any]]
+    parsed_payload: HybridAnswerRequest
+    intent: str | None
 
 
 def build_request_slots(payload: HybridAnswerRequest) -> dict[str, Any]:
@@ -174,17 +190,6 @@ async def _intent_slot_parse(payload: HybridAnswerRequest) -> IntentSlotParseRes
     deterministic = _intent_slot_parse_deterministic(payload)
     if deterministic.intent in _VALID_INTENTS:
         return deterministic
-    if not settings.deepseek_api_key:
-        return IntentSlotParseResult(
-            payload=deterministic.payload,
-            intent=deterministic.intent,
-            intent_confidence=deterministic.intent_confidence,
-            field_sources=deterministic.field_sources,
-            missing_required_slots=deterministic.missing_required_slots,
-            ambiguities=deterministic.ambiguities,
-            trace=[*deterministic.trace, "intent_slot_parse:llm_skip:no_api_key"],
-        )
-
     llm = get_chat_llm(temperature=0, timeout_seconds=8)
     messages = [
         SystemMessage(
@@ -405,21 +410,62 @@ async def resolve_turn_context_async(
 ) -> ResolvedTurnContext:
     parse_result = await _intent_slot_parse(payload=payload)
     hydrate_result = _slot_hydrate(parse_result=parse_result, payload=parse_result.payload, memory_state=memory_state)
-    clarify_reason, clarify_error, gate_trace = _react_clarify_gate(
+    decision, payload_out, clarify_reason, clarify_error, gate_trace, clarify_messages = await react_clarify_gate_async(
         parse_result=parse_result,
         hydrate_result=hydrate_result,
+        memory_state=memory_state,
+        llm_factory=lambda: get_chat_llm(temperature=0, timeout_seconds=8),
+        required_slots_for_intent=_required_slots_for_intent,
     )
     trace = [*parse_result.trace, *hydrate_result.trace, *gate_trace]
-    decision: ResolverDecision = "clarify_biz" if clarify_reason else "continue_business"
     return ResolvedTurnContext(
-        payload=hydrate_result.payload,
+        payload=payload_out,
         decision=decision,
         memory_trace=trace,
         clarify_reason=clarify_reason,
         clarify_error=clarify_error,
+        clarify_messages=clarify_messages,
     )
 
 
 async def debug_intent_slot_parse(payload: HybridAnswerRequest) -> IntentSlotParseResult:
     """Debug helper: run only resolver step-1 intent/slot parse."""
     return await _intent_slot_parse(payload=payload)
+
+
+async def debug_clarify_react(
+    payload: HybridAnswerRequest,
+    memory_state: SessionMemoryState | None,
+    *,
+    required_slots: list[str] | None = None,
+    max_rounds: int = 3,
+) -> ClarifyReactDebugResult:
+    parse_result = await _intent_slot_parse(payload=payload)
+    hydrate_result = _slot_hydrate(parse_result=parse_result, payload=parse_result.payload, memory_state=memory_state)
+    decision, payload_out, clarify_reason, clarify_error, gate_trace, clarify_messages = await react_clarify_gate_async(
+        parse_result=parse_result,
+        hydrate_result=hydrate_result,
+        memory_state=memory_state,
+        llm_factory=lambda: get_chat_llm(temperature=0, timeout_seconds=8),
+        required_slots_for_intent=_required_slots_for_intent,
+        required_slots_override=required_slots,
+        max_rounds=max_rounds,
+    )
+    resolved_slots = build_request_slots(payload_out)
+    missing_required_slots = [
+        slot
+        for slot in (required_slots or list(_required_slots_for_intent(parse_result.intent)))
+        if getattr(payload_out, slot, None) is None
+    ]
+    trace = [*parse_result.trace, *hydrate_result.trace, *gate_trace]
+    return ClarifyReactDebugResult(
+        decision=decision,
+        clarify_question=clarify_reason,
+        clarify_error=clarify_error,
+        resolved_slots=resolved_slots,
+        missing_required_slots=missing_required_slots,
+        trace=trace,
+        messages=clarify_messages or [],
+        parsed_payload=payload_out,
+        intent=parse_result.intent,
+    )

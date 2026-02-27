@@ -69,3 +69,38 @@ class HybridAnswerResponse(BaseModel):
     retrieved_count: int = Field(description="参与回答的检索条数")
     model: str = Field(description="回答使用的模型标识")
     graph_trace: list[str] = Field(default_factory=list, description="图执行节点轨迹")
+
+
+class IntentSlotParseDebugResponse(BaseModel):
+    intent: str | None = Field(default=None, description="Step-1 解析得到的意图")
+    intent_confidence: float | None = Field(default=None, description="意图置信度（若有）")
+    field_sources: dict[str, str] = Field(default_factory=dict, description="字段来源：user/memory/inferred")
+    missing_required_slots: list[str] = Field(default_factory=list, description="按当前意图判定的缺失必填槽位")
+    ambiguities: list[str] = Field(default_factory=list, description="识别到的歧义信号")
+    trace: list[str] = Field(default_factory=list, description="Step-1 调试轨迹")
+    parsed_payload: HybridAnswerRequest = Field(description="Step-1 解析后的请求对象")
+
+
+class ClarifyReactDebugRequest(BaseModel):
+    session_id: str | None = Field(default=None, description="会话ID（用于多轮澄清连续性）")
+    query: str = Field(min_length=1, description="用户输入文本")
+    intent: str | None = Field(default=None, description="可选当前意图")
+    required_slots: list[str] | None = Field(default=None, description="可选必填槽位覆盖")
+    max_rounds: int = Field(default=3, ge=1, le=8, description="单次ReAct最大循环轮次")
+    city_code: str | None = Field(default=None, description="可选城市编码")
+    lot_code: str | None = Field(default=None, description="可选停车场编码")
+    plate_no: str | None = Field(default=None, description="可选车牌号")
+    order_no: str | None = Field(default=None, description="可选订单号")
+    at_time: datetime | None = Field(default=None, description="可选时间点")
+
+
+class ClarifyReactDebugResponse(BaseModel):
+    decision: str = Field(description="澄清决策：clarify_react/continue_business/clarify_abort/clarify_biz")
+    intent: str | None = Field(default=None, description="解析得到的意图")
+    clarify_question: str | None = Field(default=None, description="需要反问用户的问题")
+    clarify_error: str | None = Field(default=None, description="澄清错误码")
+    resolved_slots: dict[str, Any] = Field(default_factory=dict, description="当前槽位快照")
+    missing_required_slots: list[str] = Field(default_factory=list, description="当前仍缺失的必填槽位")
+    trace: list[str] = Field(default_factory=list, description="调试轨迹")
+    messages: list[dict[str, Any]] = Field(default_factory=list, description="ReAct累计消息历史")
+    parsed_payload: HybridAnswerRequest = Field(description="ReAct后请求对象")

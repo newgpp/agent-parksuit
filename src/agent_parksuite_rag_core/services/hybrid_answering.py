@@ -12,7 +12,7 @@ from agent_parksuite_rag_core.schemas.answer import HybridAnswerRequest
 from agent_parksuite_rag_core.schemas.retrieve import RetrieveResponseItem
 from agent_parksuite_rag_core.services.answering import _extract_json_payload, generate_hybrid_answer
 from agent_parksuite_rag_core.services.memory import SessionMemoryState, get_session_memory_repo
-from agent_parksuite_rag_core.services.intent_slot_resolver import resolve_turn_context
+from agent_parksuite_rag_core.services.intent_slot_resolver import resolve_turn_context_async
 from agent_parksuite_rag_core.tools.biz_fact_tools import BizFactTools
 from agent_parksuite_rag_core.workflows.hybrid_answer import HybridGraphState, run_hybrid_workflow
 
@@ -61,6 +61,11 @@ async def _persist_session_memory(
         slots["plate_no"] = facts["plate_no"]
     if facts.get("city_code"):
         slots["city_code"] = facts["city_code"]
+    resolved_slots = facts.get("resolved_slots", {})
+    if isinstance(resolved_slots, dict):
+        for key, value in resolved_slots.items():
+            if value is not None:
+                slots[key] = value
 
     turns = list(old.get("turns", []))
     turns.append(
@@ -78,6 +83,14 @@ async def _persist_session_memory(
         "slots": slots,
         "turns": turns,
     }
+    clarify_messages = facts.get("clarify_messages")
+    if isinstance(clarify_messages, list):
+        new_state["clarify_messages"] = clarify_messages
+    pending_clarification = facts.get("pending_clarification")
+    if isinstance(pending_clarification, dict):
+        new_state["pending_clarification"] = pending_clarification
+    if isinstance(resolved_slots, dict):
+        new_state["resolved_slots"] = resolved_slots
     await repo.save_session(session_id, new_state, settings.memory_ttl_seconds)
 
 
@@ -148,22 +161,38 @@ async def run_hybrid_answering(
     memory_trace: list[str] = []
     if payload.session_id:
         memory_state = await get_session_memory_repo().get_session(payload.session_id)
-        resolved = resolve_turn_context(payload=payload, memory_state=memory_state)
+        resolved = await resolve_turn_context_async(payload=payload, memory_state=memory_state)
         payload = resolved.payload
         memory_trace = resolved.memory_trace
-        if resolved.decision == "clarify_biz" and resolved.clarify_reason:
+        if resolved.decision in {"clarify_biz", "clarify_react", "clarify_abort"} and resolved.clarify_reason:
             clarified_intent = payload.intent_hint or ""
+            clarify_error = resolved.clarify_error or "clarification_required"
+            key_points = ["请提供明确的订单号（order_no），例如 SCN-020。"]
+            if clarify_error == "missing_plate_no":
+                key_points = ["请提供车牌号（plate_no），例如 沪A12345。"]
+            if clarify_error == "missing_intent":
+                key_points = ["请先确认问题类型：规则解释、欠费查询，或订单金额核验。"]
             result: HybridGraphState = {
                 "intent": clarified_intent,
                 "retrieved_items": [],
                 "business_facts": {
                     "intent": clarified_intent,
-                    "error": resolved.clarify_error or "order_reference_needs_clarification",
+                    "error": clarify_error,
+                    "clarify_messages": resolved.clarify_messages or [],
+                    "pending_clarification": {
+                        "decision": resolved.decision,
+                        "error": clarify_error,
+                    },
+                    "resolved_slots": {
+                        key: getattr(resolved.payload, key)
+                        for key in ("city_code", "lot_code", "plate_no", "order_no", "at_time")
+                        if getattr(resolved.payload, key) is not None
+                    },
                 },
                 "conclusion": resolved.clarify_reason,
-                "key_points": ["请提供明确的订单号（order_no），例如 SCN-020。"],
+                "key_points": key_points,
                 "model": "",
-                "trace": [*memory_trace, "answer_synthesizer:memory_clarify"],
+                "trace": [*memory_trace, f"answer_synthesizer:{resolved.decision}"],
             }
             await _persist_session_memory(payload, result, memory_state)
             return result

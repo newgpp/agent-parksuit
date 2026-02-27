@@ -618,10 +618,57 @@
 - Implemented (current):
   - `intent_slot_resolver` deterministic pipeline wired in:
     - `intent_slot_parse -> slot_hydrate -> react_clarify_gate`
+  - resolver async entry added for one-shot parse path:
+    - `resolve_turn_context_async` with `LLM one-shot -> deterministic fallback`
+    - keep sync `resolve_turn_context` for deterministic/unit-level usage
   - missing required slot now short-circuits in resolver gate:
     - `fee_verify` missing `order_no` -> `clarify_biz`
     - `arrears_check` missing `plate_no` -> `clarify_biz`
   - route keeps backward-compatible response schema; short-circuit surfaced via `business_facts.error`
+
+#### RAG-010 PR-3 Design (ReAct Clarification Loop)
+- Goal alignment:
+  - replace current rule-only `_react_clarify_gate` with ReAct-based clarification orchestration
+  - ReAct is triggered only when `_intent_slot_parse + _slot_hydrate` still cannot converge
+  - ensure multi-turn clarification can carry full chat/tool history into next LLM calls
+- Trigger conditions to enter ReAct:
+  - `intent` is still `None` (ambiguous/conflicting intent)
+  - intent is clear but `missing_required_slots` is not empty
+  - slot value exists but requires validation before business execution (e.g. `order_no`/`plate_no`)
+- Resolver decision contract (PR-3):
+  - `continue_business`: intent clear + required slots present + validation passed (if needed)
+  - `clarify_react`: need user clarification and/or tool validation loop
+  - `clarify_abort`: max rounds reached or still cannot converge deterministically
+- ReAct loop responsibilities:
+  - ask user targeted clarification question (`ask_user`)
+  - optionally call validation tools, then continue reasoning within one invocation
+  - output strict structured JSON:
+    - `action`: `ask_user|finish_clarify|abort`
+    - `clarify_question`: string|null
+    - `slot_updates`: object
+    - `reason`: string|null
+- Clarification tools (initial set):
+  - `validate_order_no(order_no, city_code, lot_code)` -> `{valid, canonical_order_no, reason}`
+  - `validate_plate_no(plate_no, city_code)` -> `{valid, canonical_plate_no, reason}`
+  - (optional) `suggest_candidates(...)` for weak-match hints
+- Session memory adaptation (interface unchanged, state extended):
+  - `clarify_messages`: persisted `system/user/assistant/tool` messages for next-turn replay
+  - `pending_clarification`: `{intent_candidate, required_slots, rounds, last_question}`
+  - `resolved_slots`: user-confirmed and tool-validated slots
+  - keep persistence structured only; no hidden reasoning text
+- Per-turn runtime flow:
+  - Step-1/2 run first: `_intent_slot_parse -> _slot_hydrate`
+  - if unresolved, invoke ReAct clarification (`run_clarify_react_once`)
+  - persist returned `messages/resolved_slots/pending_clarification`
+  - if `ask_user`, return clarification question immediately
+  - if `finish_clarify`, merge slots back to payload and continue existing hybrid workflow
+- Safety and loop controls:
+  - configurable `max_clarify_rounds` (default 3)
+  - if repeated no-progress rounds -> `clarify_abort`
+  - only validated slots are allowed to drive downstream business tools
+- Integration boundary:
+  - keep existing `RAG-005/RAG-009` business workflow unchanged for clear-intent requests
+  - ReAct path is clarification-only and should short-circuit before heavy business chain
 
 ## Open items
 - Define and document `rule_payload` schema contract more strictly (JSON Schema / Pydantic typed segments)

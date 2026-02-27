@@ -9,6 +9,12 @@ class SessionMemoryState(TypedDict, total=False):
     slots: dict[str, Any]
     # 近期轮次摘要列表（按时间追加，用于短期上下文追踪）
     turns: list[dict[str, Any]]
+    # ReAct澄清消息历史（system/user/assistant/tool）
+    clarify_messages: list[dict[str, Any]]
+    # 待澄清上下文（用于下一轮续接）
+    pending_clarification: dict[str, Any]
+    # 已确认/已校验槽位
+    resolved_slots: dict[str, Any]
 
 
 class SessionMemoryRepo(Protocol):
