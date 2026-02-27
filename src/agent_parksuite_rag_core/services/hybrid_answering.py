@@ -88,12 +88,12 @@ async def _persist_session_memory(
         "slots": slots,
         "turns": turns,
     }
-    clarify_messages = facts.get("clarify_messages")
-    if isinstance(clarify_messages, list):
-        new_state["clarify_messages"] = clarify_messages
     pending_clarification = facts.get("pending_clarification")
     if isinstance(pending_clarification, dict):
         new_state["pending_clarification"] = pending_clarification
+        clarify_messages = facts.get("clarify_messages")
+        if isinstance(clarify_messages, list) and clarify_messages:
+            new_state["clarify_messages"] = clarify_messages[-settings.memory_max_clarify_messages :]
     if isinstance(resolved_slots, dict):
         new_state["resolved_slots"] = resolved_slots
     await repo.save_session(session_id, new_state, settings.memory_ttl_seconds)

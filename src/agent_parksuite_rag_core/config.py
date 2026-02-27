@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     biz_api_timeout_seconds: float = 10.0
     memory_ttl_seconds: int = 1800
     memory_max_turns: int = 20
+    memory_max_clarify_messages: int = 12
 
     model_config = SettingsConfigDict(env_prefix="RAG_", env_file=".env", extra="ignore")
 

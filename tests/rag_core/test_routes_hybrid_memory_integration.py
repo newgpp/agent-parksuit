@@ -5,6 +5,8 @@ from typing import Any
 import pytest
 from httpx import AsyncClient
 
+from agent_parksuite_rag_core.services.memory import get_session_memory_repo
+
 
 @pytest.mark.anyio
 async def test_hybrid_should_not_auto_carry_order_no_from_previous_turn(
@@ -186,3 +188,65 @@ async def test_hybrid_should_short_circuit_when_arrears_check_missing_plate_no(
     assert body["business_facts"]["error"] == "missing_plate_no"
     assert "react_clarify_gate_async:short_circuit:missing_plate_no" in body["graph_trace"]
     assert called["arrears_called"] is False
+
+
+@pytest.mark.anyio
+async def test_hybrid_should_clear_clarify_memory_after_continue_business(
+    rag_async_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fake_get_arrears_orders(self, plate_no: str | None, city_code: str | None) -> list[dict[str, Any]]:
+        return [{"order_no": "SCN-020", "arrears_amount": "6.00"}]
+
+    async def _fake_generate_hybrid_answer(query: str, items: list, business_facts: dict[str, Any], intent: str):
+        return ("存在欠费订单。", ["命中欠费订单"], "deepseek-chat")
+
+    monkeypatch.setattr(
+        "agent_parksuite_rag_core.clients.biz_api_client.BizApiClient.get_arrears_orders",
+        _fake_get_arrears_orders,
+    )
+    monkeypatch.setattr(
+        "agent_parksuite_rag_core.services.hybrid_answering.generate_hybrid_answer",
+        _fake_generate_hybrid_answer,
+    )
+
+    session_id = "rag011-ses-clear-clarify-001"
+    resp1 = await rag_async_client.post(
+        "/api/v1/answer/hybrid",
+        json={
+            "session_id": session_id,
+            "turn_id": "t1",
+            "query": "帮我查下有没有欠费",
+            "intent_hint": "arrears_check",
+            "city_code": "310100",
+        },
+    )
+    assert resp1.status_code == 200
+    body1 = resp1.json()
+    assert body1["business_facts"]["error"] == "missing_plate_no"
+    assert isinstance(body1["business_facts"].get("pending_clarification"), dict)
+
+    repo = get_session_memory_repo()
+    state1 = await repo.get_session(session_id)
+    assert state1 is not None
+    assert "pending_clarification" in state1
+
+    resp2 = await rag_async_client.post(
+        "/api/v1/answer/hybrid",
+        json={
+            "session_id": session_id,
+            "turn_id": "t2",
+            "query": "车牌沪SCN020帮我查下欠费",
+            "intent_hint": "arrears_check",
+            "city_code": "310100",
+            "plate_no": "沪SCN020",
+        },
+    )
+    assert resp2.status_code == 200
+    body2 = resp2.json()
+    assert body2["business_facts"]["arrears_count"] == 1
+
+    state2 = await repo.get_session(session_id)
+    assert state2 is not None
+    assert "pending_clarification" not in state2
+    assert "clarify_messages" not in state2
