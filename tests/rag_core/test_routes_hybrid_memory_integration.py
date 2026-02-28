@@ -86,7 +86,7 @@ async def test_hybrid_should_apply_resolver_chain_without_session_id(
     assert body["business_facts"]["error"] == "missing_order_no"
     assert "intent_slot_parse:order_reference" in body["graph_trace"]
     assert "slot_hydrate:none" in body["graph_trace"]
-    assert "react_clarify_gate_async:order_reference" in body["graph_trace"]
+    assert "react_clarify_gate_async:short_circuit:missing_order_no" in body["graph_trace"]
 
 
 @pytest.mark.anyio
@@ -144,7 +144,7 @@ async def test_hybrid_should_not_carry_memory_across_sessions(
     assert body2["session_id"] == "rag009-ses-iso-B"
     assert body2["business_facts"]["error"] == "missing_order_no"
     assert "slot_hydrate:none" in body2["graph_trace"]
-    assert "react_clarify_gate_async:order_reference" in body2["graph_trace"]
+    assert "react_clarify_gate_async:short_circuit:missing_order_no" in body2["graph_trace"]
 
 
 @pytest.mark.anyio

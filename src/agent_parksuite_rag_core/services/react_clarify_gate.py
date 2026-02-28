@@ -31,11 +31,17 @@ class ReactClarifyGateResult:
 
 def _should_enter_react(parse_result: Any, hydrate_result: Any) -> tuple[bool, list[str]]:
     trace: list[str] = []
-    need_react = bool(hydrate_result.missing_required_slots) or parse_result.intent is None
-    if "order_reference" in parse_result.ambiguities and hydrate_result.payload.order_no is None:
-        need_react = True
-        trace.append("react_clarify_gate_async:order_reference")
-    return need_react, trace
+    # Gate rule:
+    # 1) intent unknown -> enter ReAct for intent clarification
+    # 2) intent known but required slots missing -> do deterministic short-circuit clarify
+    # 3) otherwise continue business
+    if parse_result.intent is None:
+        trace.append("react_clarify_gate_async:need_react:missing_intent")
+        return True, trace
+    if hydrate_result.missing_required_slots:
+        trace.append("react_clarify_gate_async:need_react:missing_required_slots")
+        return True, trace
+    return False, trace
 
 
 def _short_circuit_if_possible(parse_result: Any, hydrate_result: Any, trace: list[str]) -> ReactClarifyGateResult | None:
@@ -178,6 +184,10 @@ async def react_clarify_gate_async(
     # ReAct澄清编排阶段：当 Step-1/Step-2 仍无法收敛时进入，
     # 通过澄清问答（可含工具调用）输出 continue_business/clarify_react/clarify_abort；
     # 若ReAct执行异常，回退到确定性短路澄清提示，避免中断主链路。
+    # Gate rules:
+    # 1) intent明确且没有缺失槽位 -> continue_business
+    # 2) intent明确但有缺失槽位 -> clarify_short_circuit
+    # 3) 其他场景（主要是intent不明确） -> 进入ReAct循环
     need_react, trace = _should_enter_react(parse_result=parse_result, hydrate_result=hydrate_result)
 
     if not need_react:
