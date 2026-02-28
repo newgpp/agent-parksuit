@@ -17,20 +17,17 @@ flowchart TD
     P2 --> GATE["react_clarify_gate"]
 
     subgraph SA["Clarify Sub-Agent (ReAct)"]
-      R0["run_clarify_task"]
-      R1["ask_user"]
+      R0["ReAct Loop<br/>Thought-Action-Observation"]
+      R1["ask_user_or_abort"]
       R2["finish_clarify"]
-      R3["abort"]
-      R0 --> R1
-      R0 --> R2
-      R0 --> R3
+      R0 -->|not_converged| R1
+      R0 -->|converged| R2
     end
 
     GATE -->|clarify_short_circuit| X["clarify response"]
     GATE -->|enter_react| SA
     SA -->|ask_user_or_abort| X
     SA -->|finish_clarify_ready| B["intent_router<br/>prefer resolver intent, fallback rule_explain"]
-    SA -->|finish_clarify_not_converged| X
     GATE -->|continue_business| B
     B -->|rule_explain| C["rule_explain_flow"]
     B -->|arrears_check| D["arrears_check_flow"]

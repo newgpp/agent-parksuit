@@ -207,7 +207,9 @@ async def _intent_slot_parse(payload: HybridAnswerRequest) -> IntentSlotParseRes
             ambiguities=deterministic.ambiguities,
             trace=[*deterministic.trace, "intent_slot_parse:llm_skip:no_api_key"],
         )
-    llm = get_chat_llm(temperature=0, timeout_seconds=8)
+    llm = get_chat_llm(temperature=0, timeout_seconds=8).bind(
+        response_format={"type": "json_object"}
+    )
     messages = [
         SystemMessage(
             content=(
