@@ -7,6 +7,8 @@ from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.prebuilt import create_react_agent
 from loguru import logger
 
+from agent_parksuite_common.llm_payload import dump_llm_input, dump_llm_output, trim_llm_payload_text
+from agent_parksuite_rag_core.config import settings
 from agent_parksuite_rag_core.schemas.answer import HybridAnswerRequest
 
 ClarifyAction = Literal["ask_user", "finish_clarify", "abort"]
@@ -141,6 +143,53 @@ def _parse_action_payload(last_ai: BaseMessage | None) -> tuple[dict[str, Any] |
     return parsed, ai_content
 
 
+def _log_react_llm_hops(initial_messages: list[BaseMessage], final_messages: list[BaseMessage]) -> None:
+    logger.info(
+        "llm[clarify_react] hop1_input_payload={}",
+        trim_llm_payload_text(
+            dump_llm_input(messages=initial_messages, model=settings.deepseek_model, temperature=0),
+            full_payload=settings.llm_log_full_payload,
+            max_chars=settings.llm_log_max_chars,
+        ),
+    )
+    ai_with_index: list[tuple[int, BaseMessage]] = [
+        (idx, msg) for idx, msg in enumerate(final_messages) if getattr(msg, "type", "") == "ai"
+    ]
+    if not ai_with_index:
+        return
+    logger.info(
+        "llm[clarify_react] hop1_output_payload={}",
+        trim_llm_payload_text(
+            dump_llm_output(result=ai_with_index[0][1], model=settings.deepseek_model, temperature=0),
+            full_payload=settings.llm_log_full_payload,
+            max_chars=settings.llm_log_max_chars,
+        ),
+    )
+    if len(ai_with_index) < 2:
+        return
+    second_ai_index, second_ai_message = ai_with_index[1]
+    logger.info(
+        "llm[clarify_react] hop2_input_payload={}",
+        trim_llm_payload_text(
+            dump_llm_input(
+                messages=final_messages[:second_ai_index],
+                model=settings.deepseek_model,
+                temperature=0,
+            ),
+            full_payload=settings.llm_log_full_payload,
+            max_chars=settings.llm_log_max_chars,
+        ),
+    )
+    logger.info(
+        "llm[clarify_react] hop2_output_payload={}",
+        trim_llm_payload_text(
+            dump_llm_output(result=second_ai_message, model=settings.deepseek_model, temperature=0),
+            full_payload=settings.llm_log_full_payload,
+            max_chars=settings.llm_log_max_chars,
+        ),
+    )
+
+
 def _normalize_action_and_slots(
     *,
     parsed: dict[str, Any],
@@ -204,6 +253,7 @@ async def run_clarify_react_once(
         len(final_messages),
         max(4, max_rounds * 2),
     )
+    _log_react_llm_hops(initial_messages=messages, final_messages=final_messages)
     last_ai = next((msg for msg in reversed(final_messages) if getattr(msg, "type", "") == "ai"), None)
 
     parsed, ai_content = _parse_action_payload(last_ai)
