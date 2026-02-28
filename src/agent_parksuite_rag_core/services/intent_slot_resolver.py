@@ -373,9 +373,10 @@ async def resolve_turn_context_async(
     payload_out = gate_result.payload
     if parse_result.intent in _VALID_INTENTS:
         payload_out = payload_out.model_copy(update={"intent_hint": parse_result.intent})
+    final_intent = payload_out.intent_hint if payload_out.intent_hint in _VALID_INTENTS else None
     trace = [*parse_result.trace, *hydrate_result.trace, *gate_result.trace]
     execution_context = ResolvedExecutionContext(
-        intent=parse_result.intent if parse_result.intent in _VALID_INTENTS else None,
+        intent=final_intent,
         slots=build_request_slots(payload_out),
         field_sources=dict(hydrate_result.field_sources),
     )
@@ -386,7 +387,7 @@ async def resolve_turn_context_async(
         clarify_reason=gate_result.clarify_reason,
         clarify_error=gate_result.clarify_error,
         clarify_messages=gate_result.clarify_messages,
-        resolved_intent=parse_result.intent if parse_result.intent in _VALID_INTENTS else None,
+        resolved_intent=final_intent,
         execution_context=execution_context,
     )
 
@@ -417,6 +418,7 @@ async def debug_clarify_react(
     payload_out = gate_result.payload
     if parse_result.intent in _VALID_INTENTS:
         payload_out = payload_out.model_copy(update={"intent_hint": parse_result.intent})
+    final_intent = payload_out.intent_hint if payload_out.intent_hint in _VALID_INTENTS else None
     resolved_slots = build_request_slots(payload_out)
     missing_required_slots = [
         slot
@@ -433,5 +435,5 @@ async def debug_clarify_react(
         trace=trace,
         messages=gate_result.clarify_messages or [],
         parsed_payload=payload_out,
-        intent=parse_result.intent,
+        intent=final_intent,
     )
