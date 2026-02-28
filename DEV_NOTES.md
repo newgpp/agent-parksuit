@@ -810,3 +810,52 @@
   - clarify module can be tested independently via task/result contract
   - production memory payload is reduced and stable
   - existing hybrid behavior remains compatible for user-visible outputs
+
+### RAG-012: Tool-evidence Intent Convergence in ReAct
+- Status: `Planned`
+- Goal:
+  - let ReAct output explicit `inferred_intent` based on tool evidence
+  - avoid duplicated intent inference logic in outer gate
+  - keep intent convergence deterministic and traceable
+- Why:
+  - current gate still performs post-ReAct intent inference (`rule_explain` / `arrears_check`) using traces and slot heuristics
+  - this can drift from ReAct internal decision context and increases coupling
+- Scope:
+  - clarification path only (`intent` ambiguous branch)
+  - no change to clear-intent + short-circuit behavior
+- Contract changes:
+  - extend ReAct JSON output schema with:
+    - `inferred_intent`: `rule_explain|arrears_check|fee_verify|null`
+    - `intent_evidence`: optional short labels (e.g. `lookup_order_hit`, `billing_rules_hit`)
+  - extend `ClarifyResult` with:
+    - `inferred_intent: str | None`
+    - `intent_evidence: list[str]`
+- Decision policy:
+  - gate accepts ReAct intent only when:
+    - `decision=continue_business`
+    - `inferred_intent` is in valid intent set
+  - fallback policy:
+    - if `inferred_intent` missing/invalid, keep existing missing-intent clarification
+  - guardrail:
+    - no confidence-score based branching
+    - intent must be backed by tool evidence or explicit deterministic rule
+- PR split:
+  - PR-1: schema/prompt plumbing
+    - update clarify prompt JSON contract to include `inferred_intent` + `intent_evidence`
+    - parse and carry fields through `clarify_react_graph -> ClarifyResult`
+  - PR-2: gate integration
+    - `react_clarify_gate` consumes `ClarifyResult.inferred_intent` as primary source
+    - reduce/remove gate-side message parsing and trace-based inference branches
+  - PR-3: resolver authority unification
+    - resolver final `resolved_intent` always derives from post-gate payload (`intent_hint`)
+    - ensure debug API reports final converged intent consistently
+  - PR-4: tests + acceptance
+    - add unit/integration cases:
+      - ambiguous intent + order tool hit -> inferred `arrears_check`
+      - ambiguous intent + billing rule tool hit -> inferred `rule_explain`
+      - no valid evidence -> `missing_intent` clarify
+    - add log assertions for intent evidence traceability
+- Acceptance:
+  - ambiguous requests can continue business when tool evidence is sufficient
+  - no intent-confidence threshold is used in routing
+  - one request has one final intent authority after gate normalization
