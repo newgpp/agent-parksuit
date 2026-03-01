@@ -97,6 +97,7 @@ class ClarifyReactDebugRequest(BaseModel):
 class ClarifyReactDebugResponse(BaseModel):
     decision: str = Field(description="澄清决策：clarify_react/continue_business/clarify_abort/clarify_short_circuit")
     intent: str | None = Field(default=None, description="解析得到的意图")
+    route_target: str | None = Field(default=None, description="路由目标（本阶段与意图一致）")
     clarify_question: str | None = Field(default=None, description="需要反问用户的问题")
     clarify_error: str | None = Field(default=None, description="澄清错误码")
     resolved_slots: dict[str, Any] = Field(default_factory=dict, description="当前槽位快照")

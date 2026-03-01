@@ -863,6 +863,9 @@
   - PR-3: downstream routing unification
     - resolver/hybrid route consumes contract output directly; no second intent arbitration
     - ensure debug API reports final converged intent and route target consistently
+    - in progress:
+      - gate now blocks `continue_business` when intent is still missing in ambiguous branch
+      - debug clarify response now includes `route_target` for intent-route consistency check
   - PR-4: tests + acceptance
     - add unit/integration cases:
       - ambiguous intent + order tool hit -> `resolved_intent=arrears_check`, `route_target=arrears_check`

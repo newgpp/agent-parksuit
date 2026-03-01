@@ -24,6 +24,7 @@ _VALID_INTENTS = {"rule_explain", "arrears_check", "fee_verify"}
 class ReactClarifyGateResult:
     decision: ResolverDecision
     payload: HybridAnswerRequest
+    route_target: str | None
     clarify_reason: str | None
     clarify_error: str | None
     trace: list[str]
@@ -57,6 +58,7 @@ def _short_circuit_if_possible(parse_result: Any, hydrate_result: Any, trace: li
         return ReactClarifyGateResult(
             decision="clarify_short_circuit",
             payload=hydrate_result.payload,
+            route_target=parse_result.intent if parse_result.intent in _VALID_INTENTS else None,
             clarify_reason="请提供要核验的订单号（order_no，例如 SCN-020）。",
             clarify_error="missing_order_no",
             trace=[*trace, "react_clarify_gate_async:short_circuit:missing_order_no"],
@@ -66,6 +68,7 @@ def _short_circuit_if_possible(parse_result: Any, hydrate_result: Any, trace: li
         return ReactClarifyGateResult(
             decision="clarify_short_circuit",
             payload=hydrate_result.payload,
+            route_target=parse_result.intent if parse_result.intent in _VALID_INTENTS else None,
             clarify_reason="请提供要查询欠费的车牌号（plate_no，例如 沪A12345）。",
             clarify_error="missing_plate_no",
             trace=[*trace, "react_clarify_gate_async:short_circuit:missing_plate_no"],
@@ -74,6 +77,7 @@ def _short_circuit_if_possible(parse_result: Any, hydrate_result: Any, trace: li
     return ReactClarifyGateResult(
         decision="clarify_short_circuit",
         payload=hydrate_result.payload,
+        route_target=parse_result.intent if parse_result.intent in _VALID_INTENTS else None,
         clarify_reason="请补充必要信息后继续。",
         clarify_error="missing_required_slots",
         trace=[*trace, "react_clarify_gate_async:short_circuit:missing_required_slots"],
@@ -112,6 +116,7 @@ async def _invoke_react_once(
         return None, ReactClarifyGateResult(
             decision="clarify_short_circuit",
             payload=hydrate_result.payload,
+            route_target=parse_result.intent if parse_result.intent in _VALID_INTENTS else None,
             clarify_reason="当前澄清流程暂不可用，请补充必要信息后继续。",
             clarify_error="clarify_fallback",
             trace=[*trace, "react_clarify_gate_async:fallback:react_error"],
@@ -133,13 +138,14 @@ def _normalize_react_result(
     merged_payload = hydrate_result.payload.model_copy(update=dict(react_result.resolved_slots))
     react_missing = list(react_result.missing_required_slots)
     resolved_intent = react_result.resolved_intent if react_result.resolved_intent in _VALID_INTENTS else None
-    route_target = react_result.route_target if react_result.route_target in _VALID_INTENTS else None
+    route_target = react_result.route_target if react_result.route_target in _VALID_INTENTS else resolved_intent
     intent_evidence = [item for item in react_result.intent_evidence if item]
 
     if route_target is not None and resolved_intent is not None and route_target != resolved_intent:
         return ReactClarifyGateResult(
             decision="clarify_react",
             payload=merged_payload,
+            route_target=None,
             clarify_reason="当前意图判断仍不稳定，请补充关键信息后继续。",
             clarify_error="intent_route_mismatch",
             trace=[*trace, *react_trace, "react_clarify_gate_async:intent_route_mismatch"],
@@ -147,6 +153,16 @@ def _normalize_react_result(
         )
 
     if react_decision == "continue_business" and not react_missing:
+        if parse_result.intent is None and resolved_intent is None:
+            return ReactClarifyGateResult(
+                decision="clarify_react",
+                payload=merged_payload,
+                route_target=None,
+                clarify_reason=react_result.clarify_question or "请先确认你的问题类型：规则解释、欠费查询，还是订单金额核验？",
+                clarify_error="missing_intent",
+                trace=[*trace, *react_trace, "react_clarify_gate_async:pending_intent"],
+                clarify_messages=react_messages,
+            )
         converged_payload = merged_payload
         extra_trace: list[str] = []
         if resolved_intent is not None:
@@ -159,6 +175,7 @@ def _normalize_react_result(
         return ReactClarifyGateResult(
             decision="continue_business",
             payload=converged_payload,
+            route_target=route_target or resolved_intent,
             clarify_reason=None,
             clarify_error=None,
             trace=[*trace, *react_trace, *extra_trace, "react_clarify_gate_async:continue_business"],
@@ -169,6 +186,7 @@ def _normalize_react_result(
         return ReactClarifyGateResult(
             decision="clarify_react",
             payload=merged_payload,
+            route_target=None,
             clarify_reason=react_result.clarify_question or "请先确认你的问题类型：规则解释、欠费查询，还是订单金额核验？",
             clarify_error="missing_intent",
             trace=[*trace, *react_trace, "react_clarify_gate_async:pending_intent"],
@@ -178,6 +196,7 @@ def _normalize_react_result(
         return ReactClarifyGateResult(
             decision="clarify_abort",
             payload=merged_payload,
+            route_target=route_target,
             clarify_reason=react_result.clarify_question or "当前信息仍不足以继续，请补充关键信息后重试。",
             clarify_error="clarify_abort",
             trace=[*trace, *react_trace, "react_clarify_gate_async:abort"],
@@ -186,6 +205,7 @@ def _normalize_react_result(
     return ReactClarifyGateResult(
         decision="clarify_react",
         payload=merged_payload,
+        route_target=route_target,
         clarify_reason=react_result.clarify_question or "请补充必要信息后继续。",
         clarify_error="clarify_react_required",
         trace=[*trace, *react_trace, "react_clarify_gate_async:clarify_react"],
@@ -218,6 +238,7 @@ async def react_clarify_gate_async(
         return ReactClarifyGateResult(
             decision="continue_business",
             payload=hydrate_result.payload,
+            route_target=parse_result.intent if parse_result.intent in _VALID_INTENTS else None,
             clarify_reason=None,
             clarify_error=None,
             trace=(trace or ["react_clarify_gate_async:pass"]),

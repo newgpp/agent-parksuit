@@ -90,6 +90,7 @@ async def debug_clarify_react_route(
     return ClarifyReactDebugResponse(
         decision=debug_result.decision,
         intent=debug_result.intent,
+        route_target=debug_result.route_target,
         clarify_question=debug_result.clarify_question,
         clarify_error=debug_result.clarify_error,
         resolved_slots=debug_result.resolved_slots,

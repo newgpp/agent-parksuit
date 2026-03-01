@@ -65,6 +65,7 @@ async def test_react_clarify_gate_should_accept_contract_intent_when_continue_bu
 
     assert result.decision == "continue_business"
     assert result.payload.intent_hint == "arrears_check"
+    assert result.route_target == "arrears_check"
     assert result.payload.order_no == "SCN-006"
     assert "react_clarify_gate_async:resolved_intent:arrears_check" in result.trace
 
@@ -88,6 +89,7 @@ async def test_react_clarify_gate_should_accept_contract_intent_rule_explain() -
 
     assert result.decision == "continue_business"
     assert result.payload.intent_hint == "rule_explain"
+    assert result.route_target == "rule_explain"
     assert result.payload.lot_code == "SCN-LOT-B"
     assert "react_clarify_gate_async:resolved_intent:rule_explain" in result.trace
 
@@ -127,3 +129,40 @@ async def test_react_clarify_gate_should_fallback_when_route_target_mismatch() -
 
     assert result.decision == "clarify_react"
     assert result.clarify_error == "intent_route_mismatch"
+
+
+class _FakeClarifyAgentMissingIntent:
+    async def run_clarify_task(self, _task):
+        return ClarifyResult(
+            decision="continue_business",
+            clarify_question=None,
+            resolved_slots={"order_no": "SCN-006"},
+            slot_updates={"order_no": "SCN-006"},
+            resolved_intent=None,
+            route_target=None,
+            intent_evidence=[],
+            missing_required_slots=[],
+            trace=["clarify_react:agent:finish_clarify"],
+            messages=[],
+        )
+
+
+@pytest.mark.anyio
+async def test_react_clarify_gate_should_not_continue_when_intent_still_missing() -> None:
+    parse_result = SimpleNamespace(intent=None, ambiguities=[])
+    hydrate_result = SimpleNamespace(
+        payload=HybridAnswerRequest(query="编码是 SCN-006，帮我看下"),
+        missing_required_slots=[],
+    )
+
+    result = await react_clarify_gate_async(
+        parse_result=parse_result,
+        hydrate_result=hydrate_result,
+        memory_state=None,
+        llm_factory=lambda: None,
+        required_slots_for_intent=lambda _intent: (),
+        clarify_agent=_FakeClarifyAgentMissingIntent(),
+    )
+
+    assert result.decision == "clarify_react"
+    assert result.clarify_error == "missing_intent"
