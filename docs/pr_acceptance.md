@@ -103,6 +103,7 @@ curl -X POST "http://127.0.0.1:8002/api/v1/debug/intent-slot-parse" \
 - 返回含 `intent/parsed_payload/trace`
 - 能观察到 LLM 输入输出与解析日志：
   - `llm[intent_slot_parse] input ...`
+  - `llm[intent_slot_parse] output_preview=...`
   - `llm[intent_slot_parse] output_payload=...`
   - `llm[intent_slot_parse] parse_result=...`
 
@@ -156,4 +157,5 @@ curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
 - A: `decision=clarify_short_circuit`，`trace` 含 `react_clarify_gate_async:short_circuit:*`
 - B: `resolved_slots.order_no=SCN-020` 且 `decision=continue_business`
 - C: `decision=clarify_react`（或 `clarify_abort`），`trace` 含 `react_clarify_gate_async:enter_react`
+- 进入 ReAct 后单轮最多一次工具调用；若已命中有效工具结果（`hit=true`），应直接收敛为最终 JSON，而不是继续调用第二个工具
 - 进入 ReAct 后 `messages` 非空，且同 `session_id` 可连续累积

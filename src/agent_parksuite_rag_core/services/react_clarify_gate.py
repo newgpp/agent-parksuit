@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
 
+from loguru import logger
+
 from agent_parksuite_rag_core.schemas.answer import HybridAnswerRequest
 from agent_parksuite_rag_core.services.clarify_agent import (
     ClarifyAgent,
@@ -111,6 +113,7 @@ async def _invoke_react_once(
             )
         )
     except Exception:
+        logger.exception("react_clarify_gate_async react_agent_error")
         return None, ReactClarifyGateResult(
             decision="clarify_short_circuit",
             payload=hydrate_result.payload,

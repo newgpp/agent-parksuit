@@ -205,6 +205,7 @@ async def _intent_slot_parse(payload: HybridAnswerRequest) -> IntentSlotParseRes
     )
     try:
         result = await llm.ainvoke(messages)
+        logger.info("llm[intent_slot_parse] output_preview={}", str(result.content)[:500])
     except Exception as exc:
         logger.warning("intent_slot_parse llm_error fallback=deterministic error={}", exc.__class__.__name__)
         return IntentSlotParseResult(

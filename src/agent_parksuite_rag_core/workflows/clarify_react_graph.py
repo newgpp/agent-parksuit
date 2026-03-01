@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import ast
 import json
 from typing import Any, Literal, TypedDict
 
-from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
 from langgraph.prebuilt import create_react_agent
 from loguru import logger
 
@@ -17,6 +18,7 @@ ClarifyAction = Literal["ask_user", "finish_clarify", "abort"]
 CLARIFY_SYSTEM_PROMPT = (
     "你是停车业务澄清助手。"
     "目标是最短路径补齐业务必填槽位并消除歧义。"
+    "每轮最多只允许一次工具调用；拿到可用结果后不要继续调用第二个工具，直接给出最终JSON。"
     "当用户参数可能同时代表订单或停车场时，优先调用工具先查订单再查停车场后再判断。"
     "最终回复必须是单个 JSON 对象，且只能包含 JSON，禁止输出任何额外说明、前后缀或 Markdown。"
     '仅输出JSON: {"action":"ask_user|finish_clarify|abort",'
@@ -113,11 +115,59 @@ async def _invoke_clarify_agent(
     messages: list[BaseMessage],
     max_rounds: int,
 ) -> list[BaseMessage]:
-    final_state: ClarifyGraphState = await app.ainvoke(
-        {"messages": messages},
-        config={"recursion_limit": max(4, max_rounds * 2)},
-    )
-    return list(final_state.get("messages", []))
+    def _tool_content_to_obj(content: Any) -> dict[str, Any] | None:
+        if isinstance(content, dict):
+            return content
+        if isinstance(content, str):
+            raw = content.strip()
+            if not raw:
+                return None
+            try:
+                parsed = json.loads(raw)
+                return parsed if isinstance(parsed, dict) else None
+            except json.JSONDecodeError:
+                pass
+            try:
+                parsed = ast.literal_eval(raw)
+                return parsed if isinstance(parsed, dict) else None
+            except (ValueError, SyntaxError):
+                return None
+        return None
+
+    def _has_successful_tool_result(new_messages: list[BaseMessage]) -> bool:
+        for msg in reversed(new_messages):
+            if not isinstance(msg, ToolMessage):
+                continue
+            payload = _tool_content_to_obj(getattr(msg, "content", ""))
+            if isinstance(payload, dict) and payload.get("hit") is True:
+                return True
+        return False
+
+    current_messages = list(messages)
+    app_no_tools = build_clarify_react_app(tools=[])
+    recursion_limit = max(4, max_rounds * 2)
+    for _ in range(max(1, max_rounds)):
+        final_state: ClarifyGraphState = await app.ainvoke(
+            {
+                "messages": current_messages,
+                # One tool cycle per round; multi-round behavior is managed by outer loop.
+                "remaining_steps": 2,
+            },
+            config={"recursion_limit": recursion_limit},
+        )
+        next_messages = list(final_state.get("messages", []))
+        if len(next_messages) <= len(current_messages):
+            return next_messages
+        added_messages = next_messages[len(current_messages):]
+        if _has_successful_tool_result(added_messages):
+            # A tool has already returned a successful hit; force final output without tools.
+            final_no_tools_state: ClarifyGraphState = await app_no_tools.ainvoke(
+                {"messages": next_messages},
+                config={"recursion_limit": recursion_limit},
+            )
+            return list(final_no_tools_state.get("messages", []))
+        current_messages = next_messages
+    return current_messages
 
 
 def _build_clarify_result(
