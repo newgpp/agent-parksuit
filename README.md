@@ -8,6 +8,7 @@
 - 可观测性到位：`X-Trace-Id` 跨服务透传、结构化日志、`graph_trace` 可追踪执行分支。
 - 多轮短期记忆与澄清子Agent已落地（`RAG-009` + `RAG-011`）：支持槽位继承、ReAct澄清、会话续接，且澄清过程数据与业务返回解耦。
 - 意图收敛契约已落地（`RAG-012`）：Clarify Sub-Agent 输出 `resolved_intent/slot_updates`，下游仅消费契约，不再二次意图仲裁。
+- ReAct 图执行亮点已固化（`RAG-013 PR-5`）：同会话可续接澄清历史，且工具命中 `hit=true` 后立即收敛，避免过度意图推断。
 
 ## Hybrid Resolve & Clarify Pipeline
 ```mermaid
@@ -108,6 +109,7 @@ flowchart TD
 ### RAG-013 ReAct Graph Refinement Highlights
 - ReAct 执行改为“单轮最多一次工具调用”，减少连续工具调用导致的额外延迟与分支抖动。
 - 当工具返回有效命中（`hit=true`）后，立即切换无工具模式收敛最终 JSON，不再继续第二次工具调用。
+- 澄清未完成时按 `session_id` 持久化并恢复 ReAct `messages`，支持同会话连续补槽/消歧。
 - 增加关键可观测性：`intent_slot_parse` 记录 `output_preview`，`react_clarify_gate` 记录异常堆栈日志。
 
 

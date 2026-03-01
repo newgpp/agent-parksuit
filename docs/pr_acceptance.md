@@ -159,3 +159,13 @@ curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
 - C: `decision=clarify_react`（或 `clarify_abort`），`trace` 含 `react_clarify_gate_async:enter_react`
 - 进入 ReAct 后单轮最多一次工具调用；若已命中有效工具结果（`hit=true`），应直接收敛为最终 JSON，而不是继续调用第二个工具
 - 进入 ReAct 后 `messages` 非空，且同 `session_id` 可连续累积
+
+### RAG-013 PR-5 验收：会话续接 + 命中即止
+- 会话连续性（Session-continuable memory）：
+  - 使用同一个 `session_id` 连续发起两轮以上澄清请求。
+  - 第二轮开始 `history_messages` 数量应大于 0（见 `clarify_react input ... history_messages=...` 日志）。
+  - 返回 `messages` 应为累计后的历史（而非每轮重置）。
+- 命中即止（Stop on first valid hit）：
+  - 在会触发工具调用的澄清场景中，观察到工具结果 `hit=true` 后，不应继续调用第二个工具。
+  - 应进入“无工具收敛输出”路径，返回最终单个 JSON action（`ask_user|finish_clarify|abort`）。
+  - 该行为应在 trace/log 中可定位（例如 `clarify_react result action=...`，且无继续探测的额外工具调用）。

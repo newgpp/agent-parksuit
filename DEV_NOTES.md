@@ -258,6 +258,7 @@
   - rule explanation text
   - scenario-based FAQ
   - fee calculation walk-through snippets
+
 - Acceptance:
   - imported knowledge is retrievable and traceable by source/version
 - Implemented:
@@ -909,3 +910,21 @@
   - 若本轮出现 `hit=true` 工具结果，后续应直接输出最终 JSON，不再触发第二次工具调用
   - 未命中时允许进入下一轮（受 `max_rounds` 约束）
   - 现有短路澄清与 clear-intent 业务链路行为不回归
+
+#### RAG-013 PR-5: 会话续接与命中即止亮点固化
+- Goal:
+  - 固化 ReAct 澄清链路的两个核心亮点：会话可续接、命中即止
+  - 统一文档叙述与验收口径，作为后续版本回归基线
+- Highlights:
+  - 会话续接（Session-continuable clarify memory）：
+    - 澄清未完成时，ReAct 消息历史按 `session_id` 持久化
+    - 下一轮可恢复历史 `messages`，继续补槽/消歧而非从零开始
+    - 历史受 `memory_max_clarify_messages` 与 `memory_ttl_seconds` 限制
+  - 命中即止（Stop on first valid tool hit）：
+    - 每轮最多一次工具调用
+    - 一旦出现有效命中（`hit=true`），立即切换无工具收敛并输出最终 JSON
+    - 避免过度意图推断与冗余工具调用
+- Practical value:
+  - 提升多轮澄清体验连续性
+  - 降低调用成本与过推断风险
+  - 增强线上行为可控性与可审计性
