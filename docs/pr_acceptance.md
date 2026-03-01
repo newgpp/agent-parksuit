@@ -169,3 +169,27 @@ curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
   - 在会触发工具调用的澄清场景中，观察到工具结果 `hit=true` 后，不应继续调用第二个工具。
   - 应进入“无工具收敛输出”路径，返回最终单个 JSON action（`ask_user|finish_clarify|abort`）。
   - 该行为应在 trace/log 中可定位（例如 `clarify_react result action=...`，且无继续探测的额外工具调用）。
+
+### 示例（基于真实回放）
+```bash
+
+# Example-1: SCN-002 命中工具并收敛到业务流
+curl -X POST "http://127.0.0.1:8002/api/v1/answer/hybrid" \
+  -H "accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "rag013-e2e-003",
+    "query": "编码是 SCN-002，帮我查查"
+  }'
+
+# 期望检查：
+# - response.intent = "fee_verify"
+# - response.business_facts.order_no = "SCN-002"
+# - response.graph_trace 包含:
+#   - react_clarify_gate_async:enter_react
+#   - clarify_react:agent:finish_clarify
+#   - react_clarify_gate_async:continue_business
+# - 日志可见:
+#   - tool_call: lookup_order(order_no=SCN-002)
+#   - lookup_order hit=true 后收敛输出，不继续第二个澄清工具调用
+```
