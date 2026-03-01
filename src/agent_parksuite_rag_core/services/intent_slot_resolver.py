@@ -61,7 +61,6 @@ class ResolvedExecutionContext:
 @dataclass(frozen=True)
 class ClarifyReactDebugResult:
     decision: ResolverDecision
-    route_target: str | None
     clarify_question: str | None
     clarify_error: str | None
     resolved_slots: dict[str, Any]
@@ -395,7 +394,6 @@ async def debug_clarify_react(
     trace = [*parse_result.trace, *hydrate_result.trace, *gate_result.trace]
     return ClarifyReactDebugResult(
         decision=gate_result.decision,
-        route_target=gate_result.route_target,
         clarify_question=gate_result.clarify_reason,
         clarify_error=gate_result.clarify_error,
         resolved_slots=resolved_slots,

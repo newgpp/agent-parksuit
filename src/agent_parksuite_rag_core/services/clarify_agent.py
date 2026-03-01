@@ -25,7 +25,6 @@ class ClarifyResult:
     resolved_slots: dict[str, Any]
     slot_updates: dict[str, Any]
     resolved_intent: str | None
-    route_target: str | None
     intent_evidence: list[str]
     missing_required_slots: list[str]
     trace: list[str]
@@ -104,11 +103,6 @@ class ReActClarifyAgent:
             resolved_intent=(
                 str(react_result.get("resolved_intent")).strip()
                 if react_result.get("resolved_intent") is not None
-                else None
-            ),
-            route_target=(
-                str(react_result.get("route_target")).strip()
-                if react_result.get("route_target") is not None
                 else None
             ),
             intent_evidence=[str(item) for item in react_result.get("intent_evidence", []) if str(item).strip()],

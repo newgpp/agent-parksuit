@@ -7,7 +7,7 @@
 - 工程闭环完整：迁移、种子数据、入库、接口、集成测试、E2E、离线评测（`RAG-006`）。
 - 可观测性到位：`X-Trace-Id` 跨服务透传、结构化日志、`graph_trace` 可追踪执行分支。
 - 多轮短期记忆与澄清子Agent已落地（`RAG-009` + `RAG-011`）：支持槽位继承、ReAct澄清、会话续接，且澄清过程数据与业务返回解耦。
-- 意图收敛契约已落地（`RAG-012`）：Clarify Sub-Agent 输出 `resolved_intent/route_target/slot_updates`，下游仅消费契约，不再二次意图仲裁。
+- 意图收敛契约已落地（`RAG-012`）：Clarify Sub-Agent 输出 `resolved_intent/slot_updates`，下游仅消费契约，不再二次意图仲裁。
 
 ## Hybrid Resolve & Clarify Pipeline
 ```mermaid
@@ -20,16 +20,16 @@ flowchart TD
     subgraph SA["Clarify Sub-Agent (ReAct)"]
       R0["run_clarify_task"]
       R1["ReAct loop<br/>tool evidence + clarify"]
-      R2["contract_out<br/>resolved_intent + decision + route_target + slot_updates"]
+      R2["contract_out<br/>resolved_intent + decision + slot_updates"]
       R0 --> R1 --> R2
     end
 
     GATE -->|clarify_short_circuit| X["clarify response"]
     GATE -->|enter_react| SA
     SA -->|decision=ask_or_abort| X
-    SA -->|decision=continue| COUT["consume_contract<br/>route_target = resolved_intent"]
+    SA -->|decision=continue| COUT["consume_contract<br/>use resolved_intent"]
     GATE -->|continue_business| COUT
-    COUT --> B["intent_router<br/>use route_target(intent)"]
+    COUT --> B["intent_router<br/>use resolved_intent"]
     B -->|rule_explain| C["rule_explain_flow"]
     B -->|arrears_check| D["arrears_check_flow"]
     B -->|fee_verify| E["fee_verify_flow"]
@@ -96,9 +96,8 @@ flowchart TD
 - `pending_clarification/clarify_messages` 不再出现在生产 `business_facts`，只用于内部 memory 持久化。
 
 ### RAG-012 Intent Convergence Highlights
-- Clarify Sub-Agent 输出统一契约：`resolved_intent / route_target / slot_updates / intent_evidence`。
-- 约束 `route_target = intent`（当前阶段），并在 gate 侧执行契约一致性校验。
-- ambiguous 分支 `continue_business` 必须携带有效意图；否则回退澄清（`missing_intent` / `intent_route_mismatch`）。
+- Clarify Sub-Agent 输出统一契约：`resolved_intent / slot_updates / intent_evidence`。
+- ambiguous 分支 `continue_business` 必须携带有效意图；否则回退澄清（`missing_intent`）。
 - 下游业务路由不再做二次意图仲裁，统一消费 resolver/clarify 收敛结果。
 
 
