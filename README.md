@@ -13,19 +13,18 @@
 ## Hybrid Resolve & Clarify Pipeline
 ```mermaid
 flowchart TD
-    A["POST /api/v1/answer/hybrid"] --> M["load_session_memory<br/>if session_id"]
-    M --> P1["intent_slot_parse<br/>意图判断 + 槽位提取"]
+    A["/answer/hybrid"] --> M["load_memory<br/>by session_id"]
+    M --> P1["intent_slot_parse<br/>意图+槽位提取"]
     P1 --> P2["slot_hydrate<br/>槽位继承"]
     P2 --> GATE["react_clarify_gate"]
 
-    subgraph SA["Clarify Sub-Agent (ReAct)"]
-      R0["run_clarify_task"]
-      R1["round loop<br/>max_rounds"]
-      R11["single tool cycle<br/>remaining_steps=2"]
+    subgraph SA["Clarify SA<br/>run_clarify_task"]
+      R1["round_loop<br/>max_rounds"]
+      R11["one_tool_cycle<br/>remaining_steps=2"]
       R12{"tool hit=true?"}
-      R13["no-tools finalize<br/>force final JSON"]
-      R2["contract_out<br/>resolved_intent + decision + slot_updates"]
-      R0 --> R1 --> R11 --> R12
+      R13["no_tools_finalize<br/>final JSON"]
+      R2["contract_out<br/>intent + decision + slots"]
+      R1 --> R11 --> R12
       R12 -->|yes| R13 --> R2
       R12 -->|no| R1
     end
@@ -33,9 +32,9 @@ flowchart TD
     GATE -->|clarify_short_circuit| X["clarify response"]
     GATE -->|enter_react| SA
     SA -->|decision=ask_or_abort| X
-    SA -->|decision=continue| COUT["consume_contract<br/>use resolved_intent"]
+    SA -->|decision=continue| COUT["consume_contract<br/>resolved_intent"]
     GATE -->|continue_business| COUT
-    COUT --> B["intent_router<br/>use resolved_intent"]
+    COUT --> B["intent_router<br/>resolved_intent"]
     B -->|rule_explain| C["rule_explain_flow"]
     B -->|arrears_check| D["arrears_check_flow"]
     B -->|fee_verify| E["fee_verify_flow"]
@@ -46,7 +45,7 @@ flowchart TD
     F --> SYN
     SYN --> MP["memory_persist"]
     X --> MP
-    MP --> H["HybridAnswerResponse"]
+    MP --> H["response"]
 ```
 
 ## System Architecture
