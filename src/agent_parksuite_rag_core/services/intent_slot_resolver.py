@@ -14,6 +14,11 @@ from agent_parksuite_rag_core.config import settings
 from agent_parksuite_rag_core.schemas.answer import HybridAnswerRequest
 from agent_parksuite_rag_core.services.memory import SessionMemoryState
 from agent_parksuite_rag_core.services.react_clarify_gate import react_clarify_gate_async
+from agent_parksuite_rag_core.services.resolver_types import (
+    FieldSource,
+    IntentSlotParseResult,
+    SlotHydrateResult,
+)
 
 _ORDER_NO_PATTERN = re.compile(r"\bSCN-\d+\b", re.IGNORECASE)
 _ORDER_REF_TOKENS = ("上一单", "上一笔", "这笔", "这单", "第一笔")
@@ -22,7 +27,6 @@ _SLOT_KEYS = ("city_code", "lot_code", "plate_no", "order_no", "at_time")
 _MEMORY_HYDRATE_KEYS = ("city_code", "lot_code", "plate_no")
 
 ResolverDecision = Literal["continue_business", "clarify_short_circuit", "clarify_react", "clarify_abort"]
-FieldSource = Literal["user", "memory", "inferred"]
 
 
 @dataclass(frozen=True)
@@ -52,40 +56,6 @@ class ResolvedExecutionContext:
     intent: str | None
     slots: dict[str, Any]
     field_sources: dict[str, FieldSource]
-
-
-@dataclass(frozen=True)
-class IntentSlotParseResult:
-    """阶段1产物：意图与槽位初步解析结果。"""
-
-    # 解析后（含可能从query抽取槽位）的请求对象
-    payload: HybridAnswerRequest
-    # 识别到的意图；None表示当前无法确定
-    intent: str | None
-    # 意图置信度（可选）
-    intent_confidence: float | None
-    # 槽位来源标记：user/memory/inferred
-    field_sources: dict[str, FieldSource]
-    # 基于当前意图判断的必填缺失槽位
-    missing_required_slots: list[str]
-    # 解析出的歧义列表（如订单指代歧义）
-    ambiguities: list[str]
-    # 本阶段轨迹
-    trace: list[str]
-
-
-@dataclass(frozen=True)
-class SlotHydrateResult:
-    """阶段2产物：结合会话记忆补槽后的结果。"""
-
-    # 补槽后的请求对象
-    payload: HybridAnswerRequest
-    # 补槽后字段来源标记
-    field_sources: dict[str, FieldSource]
-    # 补槽后仍缺失的必填槽位
-    missing_required_slots: list[str]
-    # 本阶段轨迹
-    trace: list[str]
 
 
 @dataclass(frozen=True)
@@ -339,7 +309,7 @@ def _slot_hydrate(
     required_slots = set(_required_slots_for_intent(intent))
     for key in _MEMORY_HYDRATE_KEYS:
         if getattr(payload, key) is None and slots.get(key):
-            # 当前阶段先保留已有稳定行为（通用槽位继承），后续可收敛为 required-only。
+            # 通用槽位继承：用于提升多轮会话的上下文连续性。
             updates[key] = slots[key]
             field_sources[key] = "memory"
             traces.append(f"slot_hydrate:{key}")

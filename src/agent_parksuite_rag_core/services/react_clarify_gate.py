@@ -11,6 +11,7 @@ from agent_parksuite_rag_core.services.clarify_agent import (
     ReActClarifyAgent,
 )
 from agent_parksuite_rag_core.services.memory import SessionMemoryState
+from agent_parksuite_rag_core.services.resolver_types import IntentSlotParseResult, SlotHydrateResult
 
 # Resolver决策枚举：
 # continue_business=继续业务执行，clarify_short_circuit=规则短路澄清，clarify_react=进入ReAct澄清，clarify_abort=澄清终止。
@@ -31,7 +32,7 @@ class ReactClarifyGateResult:
     clarify_messages: list[dict[str, Any]] | None
 
 
-def _should_enter_react(parse_result: Any, hydrate_result: Any) -> tuple[bool, list[str]]:
+def _should_enter_react(parse_result: IntentSlotParseResult, hydrate_result: SlotHydrateResult) -> tuple[bool, list[str]]:
     trace: list[str] = []
     # Gate rule:
     # 1) intent unknown -> enter ReAct for intent clarification
@@ -46,7 +47,11 @@ def _should_enter_react(parse_result: Any, hydrate_result: Any) -> tuple[bool, l
     return False, trace
 
 
-def _short_circuit_if_possible(parse_result: Any, hydrate_result: Any, trace: list[str]) -> ReactClarifyGateResult | None:
+def _short_circuit_if_possible(
+    parse_result: IntentSlotParseResult,
+    hydrate_result: SlotHydrateResult,
+    trace: list[str],
+) -> ReactClarifyGateResult | None:
     # Fast-path deterministic short-circuit:
     # if intent is already clear and only required slots are missing,
     # return clarify_short_circuit directly without entering ReAct/LLM.
@@ -87,8 +92,8 @@ def _short_circuit_if_possible(parse_result: Any, hydrate_result: Any, trace: li
 
 async def _invoke_react_once(
     *,
-    parse_result: Any,
-    hydrate_result: Any,
+    parse_result: IntentSlotParseResult,
+    hydrate_result: SlotHydrateResult,
     memory_state: SessionMemoryState | None,
     llm_factory: LLMFactory,
     required_slots_for_intent: RequiredSlotsResolver,
@@ -127,8 +132,8 @@ async def _invoke_react_once(
 
 def _normalize_react_result(
     *,
-    parse_result: Any,
-    hydrate_result: Any,
+    parse_result: IntentSlotParseResult,
+    hydrate_result: SlotHydrateResult,
     trace: list[str],
     react_result: ClarifyResult,
 ) -> ReactClarifyGateResult:
@@ -215,8 +220,8 @@ def _normalize_react_result(
 
 async def react_clarify_gate_async(
     *,
-    parse_result: Any,
-    hydrate_result: Any,
+    parse_result: IntentSlotParseResult,
+    hydrate_result: SlotHydrateResult,
     memory_state: SessionMemoryState | None,
     llm_factory: LLMFactory,
     required_slots_for_intent: RequiredSlotsResolver,

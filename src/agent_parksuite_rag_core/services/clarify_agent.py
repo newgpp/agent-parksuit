@@ -85,8 +85,7 @@ class ReActClarifyAgent:
         return serialized
 
     async def run_clarify_task(self, task: ClarifyTask) -> ClarifyResult:
-        # PR-2:
-        # clarity history memory (de)serialization is encapsulated inside sub-agent.
+        # Clarify memory (de)serialization is encapsulated inside sub-agent.
         history_messages = self._load_history_messages(task.memory_state)
         react_result = await run_clarify_react_once(
             payload=task.payload,
