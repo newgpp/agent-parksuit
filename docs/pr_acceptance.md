@@ -193,3 +193,34 @@ curl -X POST "http://127.0.0.1:8002/api/v1/answer/hybrid" \
 #   - tool_call: lookup_order(order_no=SCN-002)
 #   - lookup_order hit=true 后收敛输出，不继续第二个澄清工具调用
 ```
+
+---
+
+## RAG-014 验收：Hybrid 会话串行队列（session_id single-flight）
+
+目标：验证同会话请求串行、跨会话请求并行，避免会话记忆并发竞争。
+
+### 用例建议
+```bash
+# 终端A：同会话请求1（先发）
+curl -X POST "http://127.0.0.1:8002/api/v1/answer/hybrid" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "rag014-ses-001",
+    "query": "编码是 SCN-002，帮我查查"
+  }'
+
+# 终端B：同会话请求2（几乎同时发）
+curl -X POST "http://127.0.0.1:8002/api/v1/answer/hybrid" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "rag014-ses-001",
+    "query": "再帮我确认这笔订单金额是否一致"
+  }'
+```
+
+### 通过标准
+- 日志出现 `hybrid session_queue acquired session_id=rag014-ses-001 ...`
+- 第二个同会话请求应出现 `waited=true` 且 `waited_ms > 0`（发生排队等待）
+- 两次请求完成后结果可正常返回且无会话状态错乱
+- 不同 `session_id` 并发请求时，通常应为 `waited=false`（不互相阻塞）

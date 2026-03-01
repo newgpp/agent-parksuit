@@ -11,6 +11,7 @@ from agent_parksuite_rag_core.schemas.retrieve import RetrieveResponseItem
 from agent_parksuite_rag_core.services.answering import generate_hybrid_answer
 from agent_parksuite_rag_core.services.memory import SessionMemoryState, get_session_memory_repo
 from agent_parksuite_rag_core.services.intent_slot_resolver import ResolvedTurnContext, resolve_turn_context_async
+from agent_parksuite_rag_core.services.session_queue import get_hybrid_session_queue
 from agent_parksuite_rag_core.tools.biz_fact_tools import BizExecutionContext, BizFactTools
 from agent_parksuite_rag_core.workflows.hybrid_answer import (
     HybridExecutionContext,
@@ -204,7 +205,7 @@ async def _run_business_workflow(
         synthesize_fn=_synthesize_fn,
     )
 
-async def run_hybrid_answering(
+async def _run_hybrid_answering_inner(
     payload: HybridAnswerRequest,
     retrieve_fn: RetrieveFn,
 ) -> HybridGraphState:
@@ -277,3 +278,21 @@ async def run_hybrid_answering(
             resolved_slots_override=memory_resolved_slots,
         )
     return result
+
+
+async def run_hybrid_answering(
+    payload: HybridAnswerRequest,
+    retrieve_fn: RetrieveFn,
+) -> HybridGraphState:
+    session_id = (payload.session_id or "").strip()
+    queue = get_hybrid_session_queue()
+    async with queue.session(session_id) as queue_info:
+        if session_id:
+            logger.info(
+                "hybrid session_queue acquired session_id={} waited={} waited_ms={} active_sessions={}",
+                session_id,
+                queue_info.waited,
+                queue_info.waited_ms,
+                queue.active_session_count(),
+            )
+        return await _run_hybrid_answering_inner(payload=payload, retrieve_fn=retrieve_fn)

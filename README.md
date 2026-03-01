@@ -9,11 +9,13 @@
 - 多轮短期记忆与 ReAct Engine 已落地（`RAG-009` + `RAG-011`）：支持槽位继承、ReAct澄清、会话续接，且澄清过程数据与业务返回解耦。
 - 意图收敛契约已落地（`RAG-012`）：ReAct Engine 输出 `resolved_intent/slot_updates`，下游仅消费契约，不再二次意图仲裁。
 - ReAct 图执行亮点已固化（`RAG-013 PR-5`）：同会话可续接澄清历史，且工具命中 `hit=true` 后立即收敛，避免过度意图推断。
+- 会话串行队列已落地（`RAG-014`）：同 `session_id` 请求 single-flight 串行执行，避免 memory 并发竞争，同时保持跨会话并行。
 
 ## Hybrid Resolve & Clarify Pipeline
 ```mermaid
 flowchart TD
-    A["/answer/hybrid"] --> M["load_memory<br/>by session_id"]
+    A["/answer/hybrid"] --> Q["session_queue<br/>single-flight by session_id"]
+    Q --> M["load_memory<br/>by session_id"]
     M --> P1["intent_slot_parse<br/>意图+槽位提取"]
     P1 --> P2["slot_hydrate<br/>槽位继承"]
     P2 --> GATE["react_clarify_gate"]
@@ -110,6 +112,12 @@ flowchart TD
 - 当工具返回有效命中（`hit=true`）后，立即切换无工具模式收敛最终 JSON，不再继续第二次工具调用。
 - 澄清未完成时按 `session_id` 持久化并恢复 ReAct `messages`，支持同会话连续补槽/消歧。
 - 增加关键可观测性：`intent_slot_parse` 记录 `output_preview`，`react_clarify_gate` 记录异常堆栈日志。
+
+### RAG-014 Session Queue Highlights
+- 引入 `SessionExecutionQueue`：按 `session_id` 维护执行锁，实现同会话 single-flight。
+- 同会话并发请求会排队等待（`waited=true`/`waited_ms>0`），防止并发读写会话记忆导致状态竞争。
+- 不同会话请求保持并行执行，不牺牲整体吞吐。
+- 队列日志暴露 `waited/waited_ms/active_sessions`，便于线上观测排队与拥塞。
 
 
 ## Quick Start

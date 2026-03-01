@@ -929,3 +929,28 @@
   - 提升多轮澄清体验连续性
   - 降低调用成本与过推断风险
   - 增强线上行为可控性与可审计性
+
+### RAG-014: Hybrid 会话串行队列（session_id single-flight）
+- Status: `Done`
+- Goal:
+  - 保证同一 `session_id` 的 hybrid 请求串行执行，避免并发请求读写同一会话记忆导致状态竞争
+  - 保持跨会话并发能力，不降低整体吞吐
+- Key changes:
+  - 新增 `services/session_queue.py`：
+    - `SessionExecutionQueue`（按 `session_id` 管理 `asyncio.Lock`）
+    - `get_hybrid_session_queue()` 全局单例
+    - 自动引用计数与空闲清理，避免锁表无限增长
+  - `run_hybrid_answering` 外层增加队列包装：
+    - 同会话进入同一执行队列
+    - 记录 `waited/waited_ms/active_sessions` 便于观测排队情况
+  - 新增单测：
+    - `tests/rag_core/test_session_queue_unit.py`
+    - 覆盖“同会话串行”“跨会话并行”“执行后队列清理”
+- Affected files:
+  - `src/agent_parksuite_rag_core/services/session_queue.py`
+  - `src/agent_parksuite_rag_core/services/hybrid_answering.py`
+  - `tests/rag_core/test_session_queue_unit.py`
+- Acceptance:
+  - 同 `session_id` 并发请求按先后顺序执行，不交叉写会话状态
+  - 不同 `session_id` 请求可并行执行
+  - 执行完成后队列引用正确回收（无残留活跃会话）
