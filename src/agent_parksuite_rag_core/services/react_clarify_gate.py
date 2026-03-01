@@ -17,7 +17,6 @@ from agent_parksuite_rag_core.services.resolver_types import IntentSlotParseResu
 # continue_business=继续业务执行，clarify_short_circuit=规则短路澄清，clarify_react=进入ReAct澄清，clarify_abort=澄清终止。
 ResolverDecision = Literal["continue_business", "clarify_short_circuit", "clarify_react", "clarify_abort"]
 RequiredSlotsResolver = Callable[[str | None], tuple[str, ...]]
-LLMFactory = Callable[[], Any]
 _VALID_INTENTS = {"rule_explain", "arrears_check", "fee_verify"}
 
 
@@ -95,7 +94,6 @@ async def _invoke_react_once(
     parse_result: IntentSlotParseResult,
     hydrate_result: SlotHydrateResult,
     memory_state: SessionMemoryState | None,
-    llm_factory: LLMFactory,
     required_slots_for_intent: RequiredSlotsResolver,
     required_slots_override: list[str] | None,
     max_rounds: int,
@@ -112,7 +110,6 @@ async def _invoke_react_once(
             ClarifyTask(
                 payload=hydrate_result.payload,
                 required_slots=required_slots,
-                llm_factory=llm_factory,
                 memory_state=memory_state,
                 max_rounds=max_rounds,
             )
@@ -223,7 +220,6 @@ async def react_clarify_gate_async(
     parse_result: IntentSlotParseResult,
     hydrate_result: SlotHydrateResult,
     memory_state: SessionMemoryState | None,
-    llm_factory: LLMFactory,
     required_slots_for_intent: RequiredSlotsResolver,
     required_slots_override: list[str] | None = None,
     max_rounds: int = 3,
@@ -260,7 +256,6 @@ async def react_clarify_gate_async(
         parse_result=parse_result,
         hydrate_result=hydrate_result,
         memory_state=memory_state,
-        llm_factory=llm_factory,
         required_slots_for_intent=required_slots_for_intent,
         required_slots_override=required_slots_override,
         max_rounds=max_rounds,

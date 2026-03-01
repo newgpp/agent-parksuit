@@ -9,7 +9,7 @@ from agent_parksuite_common.llm_payload import dump_llm_input, dump_llm_output, 
 from langchain_core.messages import HumanMessage, SystemMessage
 from loguru import logger
 
-from agent_parksuite_rag_core.clients.llm_client import get_chat_llm
+from agent_parksuite_rag_core.clients.llm_client import get_default_chat_llm_json_mode
 from agent_parksuite_rag_core.config import settings
 from agent_parksuite_rag_core.schemas.answer import HybridAnswerRequest
 from agent_parksuite_rag_core.services.memory import SessionMemoryState
@@ -178,9 +178,7 @@ async def _intent_slot_parse(payload: HybridAnswerRequest) -> IntentSlotParseRes
             ambiguities=deterministic.ambiguities,
             trace=[*deterministic.trace, "intent_slot_parse:llm_skip:no_api_key"],
         )
-    llm = get_chat_llm(temperature=0, timeout_seconds=8).bind(
-        response_format={"type": "json_object"}
-    )
+    llm = get_default_chat_llm_json_mode()
     messages = [
         SystemMessage(
             content=(
@@ -338,7 +336,6 @@ async def resolve_turn_context_async(
         parse_result=parse_result,
         hydrate_result=hydrate_result,
         memory_state=memory_state,
-        llm_factory=lambda: get_chat_llm(temperature=0, timeout_seconds=8),
         required_slots_for_intent=_required_slots_for_intent,
     )
     payload_out = gate_result.payload
@@ -381,7 +378,6 @@ async def debug_clarify_react(
         parse_result=parse_result,
         hydrate_result=hydrate_result,
         memory_state=memory_state,
-        llm_factory=lambda: get_chat_llm(temperature=0, timeout_seconds=8),
         required_slots_for_intent=_required_slots_for_intent,
         required_slots_override=required_slots,
         max_rounds=max_rounds,

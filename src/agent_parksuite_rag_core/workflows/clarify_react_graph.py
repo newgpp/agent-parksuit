@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Callable, Literal, TypedDict
+from typing import Any, Literal, TypedDict
 
 from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.prebuilt import create_react_agent
 from loguru import logger
 
 from agent_parksuite_common.llm_payload import dump_llm_input, dump_llm_output, trim_llm_payload_text
+from agent_parksuite_rag_core.clients.llm_client import get_default_chat_llm
 from agent_parksuite_rag_core.config import settings
 from agent_parksuite_rag_core.schemas.answer import HybridAnswerRequest
 
 ClarifyAction = Literal["ask_user", "finish_clarify", "abort"]
-LLMFactory = Callable[[], Any]
 
 CLARIFY_SYSTEM_PROMPT = (
     "你是停车业务澄清助手。"
@@ -100,10 +100,9 @@ def _merge_slots_from_payload(payload: HybridAnswerRequest) -> dict[str, Any]:
 
 def build_clarify_react_app(
     *,
-    llm_factory: LLMFactory,
     tools: list[Any],
 ):
-    llm = llm_factory()
+    llm = get_default_chat_llm()
     return create_react_agent(
         model=llm,
         tools=tools,
@@ -248,13 +247,12 @@ def _normalize_action_and_slots(
 async def run_clarify_react_once(
     *,
     payload: HybridAnswerRequest,
-    llm_factory: LLMFactory,
     required_slots: list[str],
     history_messages: list[BaseMessage] | None = None,
     tools: list[Any] | None = None,
     max_rounds: int = 3,
 ) -> ClarifyReactResult:
-    app = build_clarify_react_app(llm_factory=llm_factory, tools=tools or [])
+    app = build_clarify_react_app(tools=tools or [])
     history = list(history_messages or [])
     logger.info(
         "clarify_react input session_id={} required_slots={} max_rounds={} history_messages={}",

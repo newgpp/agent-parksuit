@@ -74,7 +74,6 @@ async def test_react_clarify_gate_should_accept_contract_intent_when_continue_bu
         parse_result=parse_result,
         hydrate_result=hydrate_result,
         memory_state=None,
-        llm_factory=lambda: None,
         required_slots_for_intent=lambda _intent: (),
         clarify_agent=_FakeClarifyAgent(),
     )
@@ -99,7 +98,6 @@ async def test_react_clarify_gate_should_accept_contract_intent_rule_explain() -
         parse_result=parse_result,
         hydrate_result=hydrate_result,
         memory_state=None,
-        llm_factory=lambda: None,
         required_slots_for_intent=lambda _intent: (),
         clarify_agent=_FakeClarifyAgentRuleExplain(),
     )
@@ -124,7 +122,6 @@ async def test_react_clarify_gate_should_default_route_target_to_resolved_intent
         parse_result=parse_result,
         hydrate_result=hydrate_result,
         memory_state=None,
-        llm_factory=lambda: None,
         required_slots_for_intent=lambda _intent: (),
         clarify_agent=_FakeClarifyAgentRouteDefault(),
     )
@@ -162,7 +159,6 @@ async def test_react_clarify_gate_should_fallback_when_route_target_mismatch() -
         parse_result=parse_result,
         hydrate_result=hydrate_result,
         memory_state=None,
-        llm_factory=lambda: None,
         required_slots_for_intent=lambda _intent: (),
         clarify_agent=_FakeClarifyAgentMismatch(),
     )
@@ -199,7 +195,6 @@ async def test_react_clarify_gate_should_not_continue_when_intent_still_missing(
         parse_result=parse_result,
         hydrate_result=hydrate_result,
         memory_state=None,
-        llm_factory=lambda: None,
         required_slots_for_intent=lambda _intent: (),
         clarify_agent=_FakeClarifyAgentMissingIntent(),
     )

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 
@@ -10,14 +10,10 @@ from agent_parksuite_rag_core.services.memory import SessionMemoryState
 from agent_parksuite_rag_core.tools.clarify_react_tools import build_clarify_react_tools
 from agent_parksuite_rag_core.workflows.clarify_react_graph import run_clarify_react_once
 
-LLMFactory = Callable[[], Any]
-
-
 @dataclass(frozen=True)
 class ClarifyTask:
     payload: HybridAnswerRequest
     required_slots: list[str]
-    llm_factory: LLMFactory
     memory_state: SessionMemoryState | None = None
     max_rounds: int = 3
 
@@ -89,7 +85,6 @@ class ReActClarifyAgent:
         history_messages = self._load_history_messages(task.memory_state)
         react_result = await run_clarify_react_once(
             payload=task.payload,
-            llm_factory=task.llm_factory,
             required_slots=task.required_slots,
             history_messages=history_messages,
             tools=build_clarify_react_tools(),

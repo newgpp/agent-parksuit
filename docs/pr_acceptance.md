@@ -1,35 +1,30 @@
-# Acceptance Guide
+# PR Acceptance Guide
 
-用于 PR 验收与真实链路联调，包含自动验收（入库与检索）和手工 E2E（真实 LLM + 真实服务调用）。
+仅保留 PR 相关验收项，按任务顺序维护。
 
-## PR Status Note
-- `RAG-007` is currently marked as `Paused`.
-- Current baseline keeps `RAG-005` orchestration with branch-level `graph_trace`, which is sufficient for present acceptance scope.
-- `RAG-008` is currently marked as `Paused`.
-- `RAG-009` starts with dataset-first delivery (`data/rag009/memory_acceptance_cases.jsonl`) for short-term memory acceptance.
+## RAG-002 入库与检索验收
 
-## 1. 数据与入库验收（RAG-002）
-1. （可选）重建 `parksuite_rag`（当迁移状态异常或历史脏数据较多时）
+### 前置条件
 ```bash
+# （可选）重建 parksuite_rag
+
 docker exec -it parksuite-pg psql -U postgres -d postgres -c "DROP DATABASE IF EXISTS parksuite_rag;"
 docker exec -it parksuite-pg psql -U postgres -d postgres -c "CREATE DATABASE parksuite_rag;"
 docker exec -it parksuite-pg psql -U postgres -d parksuite_rag -c "CREATE EXTENSION IF NOT EXISTS vector;"
-```
 
-2. 初始化 `parksuite_rag` 表结构
-```bash
+# 迁移
 RAG_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag alembic upgrade head
 ```
-说明：迁移脚本会按当前连接数据库名判断执行目标，避免误跳过 `parksuite_rag`。
 
-3. 生成 `RAG-000` 场景数据（写入 `parksuite_biz_seed` 并导出 JSONL）
+### 验收步骤
+1. 生成 RAG-000 场景数据
 ```bash
 python scripts/rag000_seed_biz_scenarios.py \
   --database-url postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_biz_seed \
   --export-jsonl data/rag000/scenarios.jsonl
 ```
 
-4. 执行 `RAG-002` 入库
+2. 执行 RAG-002 入库
 ```bash
 python scripts/rag002_ingest_knowledge.py \
   --database-url postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag \
@@ -38,18 +33,15 @@ python scripts/rag002_ingest_knowledge.py \
   --replace-existing
 ```
 
-5. SQL 验收（`parksuite_rag`）
+3. SQL 检查
 ```sql
--- source 总数（预期 40：20 个 scenario * 2 个 doc_type）
 SELECT COUNT(*) FROM knowledge_sources WHERE source_id LIKE 'RAG000-%';
-
--- chunk 总数（应 > 0）
 SELECT COUNT(*) FROM knowledge_chunks kc
 JOIN knowledge_sources ks ON ks.id = kc.source_pk
 WHERE ks.source_id LIKE 'RAG000-%';
 ```
 
-6. 检索接口验收（`/api/v1/retrieve`）
+4. 检索接口检查
 ```bash
 curl -X POST "http://127.0.0.1:8002/api/v1/retrieve" \
   -H "Content-Type: application/json" \
@@ -65,195 +57,17 @@ curl -X POST "http://127.0.0.1:8002/api/v1/retrieve" \
     "include_inactive": false
   }'
 ```
-预期：`items` 非空，且包含 `source_id/doc_type/content`。
 
-## 2. 手工 E2E：`/api/v1/answer`（真实 LLM）
-### 前置条件
-```bash
-# 准备 RAG 数据
-python scripts/rag002_ingest_knowledge.py \
-  --database-url postgresql+asyncpg://postgres:postgres@localhost:5432/parksuite_rag \
-  --input-type scenarios_jsonl \
-  --input-path data/rag000/scenarios.jsonl \
-  --replace-existing
-
-# 配置 LLM（DeepSeek）
-export RAG_DEEPSEEK_API_KEY=your_key
-export RAG_DEEPSEEK_BASE_URL=https://api.deepseek.com
-export RAG_DEEPSEEK_MODEL=deepseek-chat
-```
-
-### 启动服务
-```bash
-uvicorn agent_parksuite_rag_core.main:app --reload --port 8002
-```
-
-### 测试用例
-```bash
-# 用例1：同城不同停车场差异（只传C场，预期可能提示证据不足）
-curl -X POST "http://127.0.0.1:8002/api/v1/answer" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "同城不同停车场为什么收费不同（C场）？",
-    "top_k": 5,
-    "doc_type": "rule_explain",
-    "source_type": "biz_derived",
-    "city_code": "310100",
-    "lot_code": "SCN-LOT-C",
-    "at_time": "2026-02-10T10:00:00+08:00"
-  }'
-
-# 用例2：同城不同停车场差异（A场+C场对比）
-curl -X POST "http://127.0.0.1:8002/api/v1/answer" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "同城不同停车场为什么收费不同（A场和C场）？请对比说明",
-    "top_k": 8,
-    "doc_type": "rule_explain",
-    "source_type": "biz_derived",
-    "city_code": "310100",
-    "at_time": "2026-02-10T10:00:00+08:00"
-  }'
-
-# 用例3：首30分钟免费边界（31分钟）
-curl -X POST "http://127.0.0.1:8002/api/v1/answer" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "首30分钟免费，31分钟要收多少？",
-    "top_k": 5,
-    "doc_type": "rule_explain",
-    "source_type": "biz_derived",
-    "city_code": "310100",
-    "lot_code": "SCN-LOT-C",
-    "at_time": "2026-02-01T08:31:00+08:00"
-  }'
-
-# 用例4：规则版本切换（2月15号）
-curl -X POST "http://127.0.0.1:8002/api/v1/answer" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "这个停车场2月15号怎么收费？",
-    "top_k": 5,
-    "doc_type": "rule_explain",
-    "source_type": "biz_derived",
-    "city_code": "310100",
-    "lot_code": "SCN-LOT-E",
-    "at_time": "2026-02-15T10:00:00+08:00"
-  }'
-```
-
-### 验收检查点
+### 通过标准
 - HTTP 200
-- 返回包含 `conclusion`、`key_points`、`citations`
-- `retrieved_count > 0`
-- `citations` 含 `source_id/chunk_id/doc_type/snippet`
+- `items` 非空，包含 `source_id/doc_type/content`
+- source/chunk 数量符合预期
 
-## 3. 手工 E2E：`/api/v1/answer/hybrid`（真实 LLM + 真实 biz-api）
-### 前置条件
-- `biz-api` 已启动（默认 `http://127.0.0.1:8001`）
-- `rag-core` 已启动（`http://127.0.0.1:8002`）
-- `RAG_BIZ_API_BASE_URL` 指向可访问的 biz-api
+---
 
-### 启动服务
-```bash
-# 终端1：启动 biz-api
-uvicorn agent_parksuite_biz_api.main:app --reload --port 8001
+## RAG-010 Step-1 验收：intent_slot_parse（LLM）
 
-# 终端2：启动 rag-core
-uvicorn agent_parksuite_rag_core.main:app --reload --port 8002
-```
-
-### 测试用例
-```bash
-# 用例1：规则解释分支（rule_explain）
-curl -X POST "http://127.0.0.1:8002/api/v1/answer/hybrid" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "这个停车场2月15号怎么收费？",
-    "intent_hint": "rule_explain",
-    "top_k": 5,
-    "doc_type": "rule_explain",
-    "source_type": "biz_derived",
-    "city_code": "310100",
-    "lot_code": "SCN-LOT-E",
-    "at_time": "2026-02-15T10:00:00+08:00"
-  }'
-
-# 用例2：欠费查询分支（arrears_check）
-curl -X POST "http://127.0.0.1:8002/api/v1/answer/hybrid" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "帮我查下车牌沪SCN001有没有欠费",
-    "intent_hint": "arrears_check",
-    "top_k": 3,
-    "doc_type": "faq",
-    "source_type": "biz_derived",
-    "city_code": "310100",
-    "lot_code": "SCN-LOT-A",
-    "plate_no": "沪SCN001"
-  }'
-
-# 用例3：历史订单计费核验分支（fee_verify）
-curl -X POST "http://127.0.0.1:8002/api/v1/answer/hybrid" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "这个订单金额为什么不一致，帮我核验下",
-    "intent_hint": "fee_verify",
-    "top_k": 3,
-    "doc_type": "rule_explain",
-    "source_type": "biz_derived",
-    "city_code": "310100",
-    "lot_code": "SCN-LOT-A",
-    "order_no": "SCN-020"
-  }'
-```
-
-### 验收检查点
-- HTTP 200
-- 返回包含 `intent`、`business_facts`、`conclusion`、`key_points`、`citations`、`graph_trace`
-- `graph_trace` 含 `intent_classifier:*` 且命中目标分支（`rule_explain_flow` / `arrears_check_flow` / `fee_verify_flow`）
-- `arrears_check` 时 `business_facts.arrears_count` 有值
-- `fee_verify` 时 `business_facts.amount_check_result/amount_check_action` 有值
-
-## 4. API 示例
-### Billing Rule Payload Example
-```json
-{
-  "rule_code": "SH-PUDONG-A",
-  "name": "Pudong A v1",
-  "status": "enabled",
-  "scope": {
-    "scope_type": "lot_code",
-    "city_code": "310100",
-    "lot_codes": ["LOT-A", "LOT-B"]
-  },
-  "version": {
-    "effective_from": "2026-02-23T00:00:00",
-    "effective_to": null,
-    "priority": 100,
-    "rule_payload": [
-      {
-        "name": "day_periodic",
-        "type": "periodic",
-        "time_window": {"start": "08:00", "end": "22:00", "timezone": "Asia/Shanghai"},
-        "unit_minutes": 30,
-        "unit_price": 2,
-        "free_minutes": 30,
-        "max_charge": 30
-      },
-      {
-        "name": "night_free",
-        "type": "free",
-        "time_window": {"start": "22:00", "end": "08:00", "timezone": "Asia/Shanghai"}
-      }
-    ]
-  }
-}
-```
-说明：`time_window.timezone` 可按规则分段单独配置，默认值为 `Asia/Shanghai`。
-
-## 5. RAG-010 调试验收：`_intent_slot_parse`（Step-1 LLM）
-目标：仅验证 resolver Step-1 的 LLM 意图/槽位解析，不进入后续业务工具链路。
+目标：仅验证 resolver Step-1 的意图/槽位解析，不进入后续业务链路。
 
 ### 前置条件
 ```bash
@@ -265,78 +79,50 @@ uvicorn agent_parksuite_rag_core.main:app --reload --port 8002
 
 ### 调试接口
 - `POST /api/v1/debug/intent-slot-parse`
-- 入参：复用 `HybridAnswerRequest`
-- 返回：`intent/intent_confidence/field_sources/missing_required_slots/ambiguities/trace/parsed_payload`
 
-### E2E 用例
+### 用例
 ```bash
-# 用例1：fee_verify + 提取 order_no
+# 1) fee_verify + order_no 提取
 curl -X POST "http://127.0.0.1:8002/api/v1/debug/intent-slot-parse" \
   -H "Content-Type: application/json" \
-  -d '{
-    "query": "请帮我核验订单 SCN-020 金额是否正确"
-  }'
+  -d '{"query": "请帮我核验订单 SCN-020 金额是否正确"}'
 
-# 用例2：arrears_check 缺 plate_no（应给出缺参信号）
+# 2) arrears_check 缺 plate_no（intent_hint）
 curl -X POST "http://127.0.0.1:8002/api/v1/debug/intent-slot-parse" \
   -H "Content-Type: application/json" \
-  -d '{
-    "query": "帮我查下有没有欠费",
-    "intent_hint": "arrears_check"
-  }'
+  -d '{"query": "帮我查下有没有欠费", "intent_hint": "arrears_check"}'
 
-# 用例3：arrears_check 缺 plate_no（应给出缺参信号）
+# 3) 订单指代歧义
 curl -X POST "http://127.0.0.1:8002/api/v1/debug/intent-slot-parse" \
   -H "Content-Type: application/json" \
-  -d '{
-    "query": "帮我查下有没有欠费"
-  }'
-
-# 用例4：订单指代歧义（应识别 ambiguity）
-curl -X POST "http://127.0.0.1:8002/api/v1/debug/intent-slot-parse" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "这笔订单帮我核验下"
-  }'
+  -d '{"query": "这笔订单帮我核验下"}'
 ```
 
-### 验收检查点
+### 通过标准
 - HTTP 200
-- 返回含 `intent`、`parsed_payload`、`trace`
-- 用例1：`parsed_payload.order_no` 被识别（例如 `SCN-020`）
-- 用例2：`missing_required_slots` 含 `plate_no`
-- 用例3：`ambiguities` 含 `order_reference` 或 `trace` 出现对应解析轨迹
-- 服务日志可观测到：
+- 返回含 `intent/parsed_payload/trace`
+- 能观察到 LLM 输入输出与解析日志：
   - `llm[intent_slot_parse] input ...`
   - `llm[intent_slot_parse] output_payload=...`
   - `llm[intent_slot_parse] parse_result=...`
 
-## 6. RAG-010 PR-3 调试验收：ReAct 澄清循环（Debug API）
-目标：仅验证 resolver 的 Step-3 澄清决策链路（规则短路 + ReAct），不进入 hybrid 重业务执行。
+---
+
+## RAG-010 PR-3 验收：react_clarify_gate（短路 + ReAct）
+
+目标：验证 Step-3 澄清决策链路（规则短路 + ReAct），不进入 hybrid 重业务执行。
 
 ### 前置条件
 - `rag-core` 已启动：`http://127.0.0.1:8002`
-- 已配置可用 LLM key（DeepSeek/OpenAI 兼容）
-- 使用固定 `session_id` 做多轮请求
+- 已配置可用 LLM key
+- 多轮场景使用固定 `session_id`
 
 ### 调试接口
 - `POST /api/v1/debug/clarify-react`
-- 入参（建议）：
-  - `session_id`: 会话ID（必填，用于复用历史）
-  - `query`: 本轮用户输入
-  - `intent`: 可选，当前已识别意图
-  - `required_slots`: 可选，当前意图的必填槽位
-  - `max_rounds`: 可选，默认3
-- 返回（建议）：
-  - `decision`: `clarify_short_circuit|clarify_react|continue_business|clarify_abort`
-  - `clarify_question`: 当前要反问用户的问题
-  - `resolved_slots`: 当前已收敛槽位
-  - `missing_required_slots`: 当前仍缺失槽位
-  - `trace`: 调试轨迹
-  - `messages`: 当前累计消息（仅进入 ReAct 时有值）
 
-### 用例A：意图明确 + 缺必填（规则短路）
+### 用例
 ```bash
+# A. 意图明确 + 缺必填（短路）
 curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
   -H "Content-Type: application/json" \
   -d '{
@@ -345,14 +131,8 @@ curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
     "intent": "fee_verify",
     "required_slots": ["order_no"]
   }'
-```
-预期：
-- `decision=clarify_short_circuit`
-- `clarify_question` 非空（明确索要 `order_no`）
-- `trace` 包含 `react_clarify_gate_async:short_circuit:*`
 
-### 用例B：同会话补参后继续（规则短路收敛）
-```bash
+# B. 同会话补参后继续
 curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
   -H "Content-Type: application/json" \
   -d '{
@@ -361,14 +141,8 @@ curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
     "intent": "fee_verify",
     "required_slots": ["order_no"]
   }'
-```
-预期：
-- `resolved_slots.order_no=SCN-020`（或 canonical 值）
-- `missing_required_slots=[]`
-- `decision=continue_business`
 
-### 用例C：意图不明确触发 ReAct
-```bash
+# C. 意图不明确触发 ReAct
 curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
   -H "Content-Type: application/json" \
   -d '{
@@ -377,105 +151,9 @@ curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
     "required_slots": []
   }'
 ```
-预期：
-- `decision` 为 `clarify_react`（或 `clarify_abort`）
-- `messages` 非空（进入 ReAct 链路后才会累计）
 
-### 用例D：承接用例C后直接收敛（Step-1 命中）
-```bash
-curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "session_id": "RAG010-PR3-DBG-003",
-    "query": "我要核验订单 SCN-020 的金额",
-    "required_slots": ["order_no"]
-  }'
-```
-预期：
-- `resolved_slots.order_no=SCN-020`
-- `missing_required_slots=[]`
-- `decision=continue_business`
-- `trace` 包含 `react_clarify_gate_async:pass`（不进入 ReAct）
-- `messages=[]`
-
-### 用例E：进入 ReAct 澄清流程
-```bash
-curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "session_id": "RAG010-PR3-DBG-004",
-    "query": "这单怎么处理",
-    "required_slots": []
-  }'
-```
-预期：
-- `decision=clarify_react`（或 `clarify_abort`）
-- `trace` 包含 `react_clarify_gate_async:enter_react` 与 `clarify_react:agent:*`
-- `messages` 非空（出现 `user/assistant`）
-
-### 用例F：通过 ReAct 澄清后继续业务
-说明：该用例承接用例E，使用相同 `session_id`。
-```bash
-curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "session_id": "RAG010-PR3-DBG-004",
-    "query": "我是想问 SCN-LOT-A 停车场编码的收费规则，不是核验订单金额",
-    "intent": "rule_explain",
-    "required_slots": []
-  }'
-```
-预期：
-- 目标：`decision=continue_business`
-- `trace` 包含 `react_clarify_gate_async:continue_business`（若本轮通过 ReAct 收敛）
-- 若仍返回 `clarify_react`，可继续同会话补充明确意图直到收敛
-
-### 说明：工具校验场景
-- 当前实现 `tools=[]`，尚未接入 `validate_order_no/validate_plate_no` 等工具。
-- “参数无效触发工具校验”应放到后续 PR（工具接入后）验收。
-
-### E2E（规划）：二次澄清 + 双工具判定订单/停车场
-目标：验证“首轮意图不明确 -> 二轮参数仍模糊 -> 通过两次 tool 调用判定业务路径”。
-
-#### E2E-1 首轮进入 ReAct
-```bash
-curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "session_id": "RAG010-PR3-E2E-TOOL-001",
-    "query": "这单怎么处理",
-    "required_slots": []
-  }'
-```
-预期：
-- `decision=clarify_react`
-- 返回针对“订单/停车场”的澄清问题
-
-#### E2E-2 二轮参数仍模糊，触发双工具判定
-```bash
-curl -X POST "http://127.0.0.1:8002/api/v1/debug/clarify-react" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "session_id": "RAG010-PR3-E2E-TOOL-001",
-    "query": "编码是 A-001，帮我看下",
-    "required_slots": []
-  }'
-```
-预期（工具接入后）：
-- `trace` 出现两次工具调用（order lookup + lot lookup）
-- 若仅命中订单：`decision=continue_business` 且后续意图收敛到 `fee_verify`
-- 若仅命中停车场：`decision=continue_business` 且后续意图收敛到 `rule_explain`
-- 若都命中：`decision=clarify_react`，返回“你是要核验订单还是问收费规则？”
-- 若都未命中：`decision=clarify_react`，要求用户补充更明确标识
-
-### 验收检查点
-- 意图明确缺参时优先规则短路：`clarify_short_circuit`（不进入 ReAct）
-- 意图不明确时进入 ReAct：`clarify_react/clarify_abort`
-- `resolved_slots.order_no=SCN-020`（或 canonical 值）
-- 同一 `session_id` 下，进入 ReAct 的请求应可观察 `messages` 连续累积
-- 缺参补齐后可转为 `continue_business`
-- 日志可观测：
-  - `react_clarify_gate_async:short_circuit:*`
-  - `clarify_react:start`
-  - `clarify_react:agent:*`
-  - `clarify_react result decision=...`
+### 通过标准
+- A: `decision=clarify_short_circuit`，`trace` 含 `react_clarify_gate_async:short_circuit:*`
+- B: `resolved_slots.order_no=SCN-020` 且 `decision=continue_business`
+- C: `decision=clarify_react`（或 `clarify_abort`），`trace` 含 `react_clarify_gate_async:enter_react`
+- 进入 ReAct 后 `messages` 非空，且同 `session_id` 可连续累积

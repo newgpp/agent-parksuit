@@ -25,7 +25,10 @@ async def test_resolve_turn_context_async_should_use_llm_slots_when_available(
 
             return _Resp()
 
-    monkeypatch.setattr("agent_parksuite_rag_core.services.intent_slot_resolver.get_chat_llm", lambda **_: _FakeLLM())
+    monkeypatch.setattr(
+        "agent_parksuite_rag_core.services.intent_slot_resolver.get_default_chat_llm_json_mode",
+        lambda: _FakeLLM(),
+    )
     monkeypatch.setattr("agent_parksuite_rag_core.services.intent_slot_resolver.settings.deepseek_api_key", "x-test")
 
     payload = HybridAnswerRequest(query="帮我核验一下这单金额", intent_hint=None)
@@ -69,7 +72,10 @@ async def test_intent_slot_parse_should_merge_llm_json_result(
 
             return _Resp()
 
-    monkeypatch.setattr("agent_parksuite_rag_core.services.intent_slot_resolver.get_chat_llm", lambda **_: _FakeLLM())
+    monkeypatch.setattr(
+        "agent_parksuite_rag_core.services.intent_slot_resolver.get_default_chat_llm_json_mode",
+        lambda: _FakeLLM(),
+    )
     monkeypatch.setattr("agent_parksuite_rag_core.services.intent_slot_resolver.settings.deepseek_api_key", "x-test")
     payload = HybridAnswerRequest(query="这笔订单帮我核验下")
 
@@ -98,7 +104,10 @@ async def test_intent_slot_parse_should_fallback_when_llm_returns_invalid_json(
 
             return _Resp()
 
-    monkeypatch.setattr("agent_parksuite_rag_core.services.intent_slot_resolver.get_chat_llm", lambda **_: _FakeLLM())
+    monkeypatch.setattr(
+        "agent_parksuite_rag_core.services.intent_slot_resolver.get_default_chat_llm_json_mode",
+        lambda: _FakeLLM(),
+    )
     monkeypatch.setattr("agent_parksuite_rag_core.services.intent_slot_resolver.settings.deepseek_api_key", "x-test")
     payload = HybridAnswerRequest(query="这笔订单帮我核验下")
 
@@ -121,7 +130,10 @@ async def test_intent_slot_parse_should_fallback_when_llm_raises(
         async def ainvoke(self, _messages):
             raise RuntimeError("llm down")
 
-    monkeypatch.setattr("agent_parksuite_rag_core.services.intent_slot_resolver.get_chat_llm", lambda **_: _FakeLLM())
+    monkeypatch.setattr(
+        "agent_parksuite_rag_core.services.intent_slot_resolver.get_default_chat_llm_json_mode",
+        lambda: _FakeLLM(),
+    )
     monkeypatch.setattr("agent_parksuite_rag_core.services.intent_slot_resolver.settings.deepseek_api_key", "x-test")
     payload = HybridAnswerRequest(query="这笔订单帮我核验下")
 
