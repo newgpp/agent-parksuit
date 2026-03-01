@@ -10,8 +10,9 @@ from agent_parksuite_rag_core.services.memory import SessionMemoryState
 from agent_parksuite_rag_core.tools.clarify_react_tools import build_clarify_react_tools
 from agent_parksuite_rag_core.workflows.clarify_react_graph import run_clarify_react_once
 
+
 @dataclass(frozen=True)
-class ClarifyTask:
+class ReActTask:
     payload: HybridAnswerRequest
     required_slots: list[str]
     memory_state: SessionMemoryState | None = None
@@ -19,7 +20,7 @@ class ClarifyTask:
 
 
 @dataclass(frozen=True)
-class ClarifyResult:
+class ReActResult:
     decision: str
     clarify_question: str | None
     resolved_slots: dict[str, Any]
@@ -31,12 +32,12 @@ class ClarifyResult:
     messages: list[dict[str, Any]] | None
 
 
-class ClarifyAgent(Protocol):
-    async def run_clarify_task(self, task: ClarifyTask) -> ClarifyResult:
+class ReActEngine(Protocol):
+    async def run(self, task: ReActTask) -> ReActResult:
         ...
 
 
-class ReActClarifyAgent:
+class DefaultReActEngine:
     @staticmethod
     def _load_history_messages(memory_state: SessionMemoryState | None) -> list[BaseMessage]:
         if not memory_state:
@@ -79,8 +80,8 @@ class ReActClarifyAgent:
             serialized.append(item)
         return serialized
 
-    async def run_clarify_task(self, task: ClarifyTask) -> ClarifyResult:
-        # Clarify memory (de)serialization is encapsulated inside sub-agent.
+    async def run(self, task: ReActTask) -> ReActResult:
+        # Clarify memory (de)serialization is encapsulated inside ReAct engine.
         history_messages = self._load_history_messages(task.memory_state)
         react_result = await run_clarify_react_once(
             payload=task.payload,
@@ -90,12 +91,8 @@ class ReActClarifyAgent:
             max_rounds=task.max_rounds,
         )
         messages = react_result.get("messages", [])
-        serialized_messages = (
-            self._dump_history_messages(messages)
-            if isinstance(messages, list)
-            else []
-        )
-        return ClarifyResult(
+        serialized_messages = self._dump_history_messages(messages) if isinstance(messages, list) else []
+        return ReActResult(
             decision=str(react_result.get("decision", "clarify_react")),
             clarify_question=react_result.get("clarify_question"),
             resolved_slots=dict(react_result.get("resolved_slots", {})),
@@ -110,3 +107,10 @@ class ReActClarifyAgent:
             trace=list(react_result.get("trace", [])),
             messages=serialized_messages,
         )
+
+
+# Backward-compatible aliases for old naming.
+ClarifyTask = ReActTask
+ClarifyResult = ReActResult
+ClarifyAgent = ReActEngine
+ReActClarifyAgent = DefaultReActEngine

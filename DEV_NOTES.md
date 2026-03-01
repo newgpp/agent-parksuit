@@ -740,7 +740,7 @@
   - `run_clarify_react_once` and surrounding orchestration carry mixed responsibilities (agent loop + state transfer + business integration)
 - Target architecture:
   - external orchestrator calls a single entry:
-    - `run_clarify_task(task) -> result`
+    - `react_engine.run(task) -> result`
   - sub-agent internalizes:
     - ReAct loop
     - short-term clarify memory
@@ -751,13 +751,13 @@
     - slot updates / resolved intent
     - missing required slots
 - Contract proposal:
-  - `ClarifyTask`:
+  - `ReActTask`:
     - `query`
     - `known_slots`
     - `required_slots`
     - `intent_hint` (optional)
     - `session_key` (optional, for clarify memory namespace)
-  - `ClarifyResult`:
+  - `ReActResult`:
     - `decision`
     - `clarify_question`
     - `slot_updates`
@@ -774,23 +774,24 @@
     - persist full ReAct internal trace in production memory state
 - PR split (recommended):
   - PR-1: sub-agent contract scaffold
-    - add `ClarifyTask` / `ClarifyResult` schema
-    - add `ClarifyAgent` interface and adapter over existing `run_clarify_react_once`
+    - add `ReActTask` / `ReActResult` schema
+    - add `ReActEngine` interface and adapter over existing `run_clarify_react_once`
     - keep behavior unchanged
     - implemented:
-      - new file `services/clarify_agent.py` (`ClarifyTask`, `ClarifyResult`, `ClarifyAgent`, `ReActClarifyAgent`)
-      - `react_clarify_gate_async` now invokes `ClarifyAgent` contract instead of direct graph function
+      - new file `services/react_engine.py` (`ReActTask`, `ReActResult`, `ReActEngine`, `DefaultReActEngine`)
+      - `services/clarify_agent.py` kept as backward-compatible re-export layer
+      - `react_clarify_gate_async` now invokes `ReActEngine` contract instead of direct graph function
   - PR-2: internal clarify memory encapsulation
     - move clarify message serialization/deserialization into sub-agent module
     - remove direct memory plumbing from route/service layer
     - implemented:
       - `run_clarify_react_once` now accepts `history_messages` instead of `memory_state`
-      - clarify history deserialize/serialize moved to `services/clarify_agent.py`
+      - clarify history deserialize/serialize moved to `services/react_engine.py`
   - PR-3: orchestration simplification
-    - `react_clarify_gate_async` consumes `ClarifyAgent` result only
+    - `react_clarify_gate_async` consumes `ReActEngine` result only
     - remove process-level fields from gate return path where unnecessary
     - implemented:
-      - gate internal flow switched from `dict` relay to typed `ClarifyResult` relay
+      - gate internal flow switched from `dict` relay to typed `ReActResult` relay
       - main resolver/hybrid path no longer propagates `clarify_tool_trace` (debug path keeps tool trace)
   - PR-4: production/debug path separation
     - production returns stable decision payload only
@@ -832,7 +833,7 @@
     - `route_target`: same value as `resolved_intent` (explicitly `route_target = intent`)
     - `slot_updates`: resolved slot delta
     - `intent_evidence`: optional short labels (e.g. `lookup_order_hit`, `billing_rules_hit`)
-  - extend `ClarifyResult` with:
+  - extend `ReActResult` with:
     - `resolved_intent: str | None`
     - `route_target: str | None`
     - `slot_updates: dict[str, Any]`
@@ -850,12 +851,12 @@
 - PR split:
   - PR-1: contract/schema plumbing
     - update clarify prompt JSON contract to include `resolved_intent`/`route_target`/`slot_updates`/`intent_evidence`
-    - parse and carry fields through `clarify_react_graph -> ClarifyResult`
+    - parse and carry fields through `clarify_react_graph -> ReActResult`
     - implemented:
       - clarify prompt/JSON parser now carries `resolved_intent`/`route_target`/`slot_updates`/`intent_evidence`
-      - `ClarifyResult` extended with the same contract fields
+      - `ReActResult` extended with the same contract fields
   - PR-2: gate integration
-    - `react_clarify_gate` consumes `ClarifyResult.resolved_intent` and `route_target`
+    - `react_clarify_gate` consumes `ReActResult.resolved_intent` and `route_target`
     - enforce `route_target = intent` contract and remove residual heuristic arbitration
     - implemented:
       - removed gate-side tool-hit trace inference fallback

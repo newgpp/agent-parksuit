@@ -18,7 +18,7 @@ flowchart TD
     P1 --> P2["slot_hydrate<br/>槽位继承"]
     P2 --> GATE["react_clarify_gate"]
 
-    subgraph SA["Clarify SA<br/>run_clarify_task"]
+    subgraph SA["Clarify SA<br/>react_engine.run"]
       R1["round_loop<br/>max_rounds"]
       R11["one_tool_cycle<br/>remaining_steps=2"]
       R12{"tool hit=true?"}
@@ -95,7 +95,7 @@ flowchart TD
 - 隔离保证：不同 `session_id` 不共享短期记忆。
 
 ### RAG-011 Clarify Sub-Agent Highlights
-- ReAct 澄清已抽象为子Agent契约：`ClarifyTask -> ClarifyResult`。
+- ReAct 澄清已抽象为子Agent契约：`ReActTask -> ReActResult`。
 - `react_clarify_gate_async` 仅消费子Agent结果，去除 direct graph 耦合。
 - `tool_trace` 已端到端移除，降低调试字段对主链路的侵入。
 - `pending_clarification/clarify_messages` 不再出现在生产 `business_facts`，只用于内部 memory 持久化。

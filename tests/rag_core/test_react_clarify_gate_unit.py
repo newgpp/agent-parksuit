@@ -5,13 +5,13 @@ from types import SimpleNamespace
 import pytest
 
 from agent_parksuite_rag_core.schemas.answer import HybridAnswerRequest
-from agent_parksuite_rag_core.services.clarify_agent import ClarifyResult
+from agent_parksuite_rag_core.services.react_engine import ReActResult
 from agent_parksuite_rag_core.services.react_clarify_gate import react_clarify_gate_async
 
 
-class _FakeClarifyAgent:
-    async def run_clarify_task(self, _task):
-        return ClarifyResult(
+class _FakeReActEngine:
+    async def run(self, _task):
+        return ReActResult(
             decision="continue_business",
             clarify_question=None,
             resolved_slots={"order_no": "SCN-006"},
@@ -24,9 +24,9 @@ class _FakeClarifyAgent:
         )
 
 
-class _FakeClarifyAgentRuleExplain:
-    async def run_clarify_task(self, _task):
-        return ClarifyResult(
+class _FakeReActEngineRuleExplain:
+    async def run(self, _task):
+        return ReActResult(
             decision="continue_business",
             clarify_question=None,
             resolved_slots={
@@ -57,7 +57,7 @@ async def test_react_clarify_gate_should_accept_contract_intent_when_continue_bu
         hydrate_result=hydrate_result,
         memory_state=None,
         required_slots_for_intent=lambda _intent: (),
-        clarify_agent=_FakeClarifyAgent(),
+        react_engine=_FakeReActEngine(),
     )
 
     assert result.decision == "continue_business"
@@ -80,7 +80,7 @@ async def test_react_clarify_gate_should_accept_contract_intent_rule_explain() -
         hydrate_result=hydrate_result,
         memory_state=None,
         required_slots_for_intent=lambda _intent: (),
-        clarify_agent=_FakeClarifyAgentRuleExplain(),
+        react_engine=_FakeReActEngineRuleExplain(),
     )
 
     assert result.decision == "continue_business"
@@ -90,9 +90,9 @@ async def test_react_clarify_gate_should_accept_contract_intent_rule_explain() -
     assert "react_clarify_gate_async:intent_evidence:billing_rules_hit" in result.trace
 
 
-class _FakeClarifyAgentMissingIntent:
-    async def run_clarify_task(self, _task):
-        return ClarifyResult(
+class _FakeReActEngineMissingIntent:
+    async def run(self, _task):
+        return ReActResult(
             decision="continue_business",
             clarify_question=None,
             resolved_slots={"order_no": "SCN-006"},
@@ -118,7 +118,7 @@ async def test_react_clarify_gate_should_not_continue_when_intent_still_missing(
         hydrate_result=hydrate_result,
         memory_state=None,
         required_slots_for_intent=lambda _intent: (),
-        clarify_agent=_FakeClarifyAgentMissingIntent(),
+        react_engine=_FakeReActEngineMissingIntent(),
     )
 
     assert result.decision == "clarify_react"
