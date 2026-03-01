@@ -7,6 +7,7 @@
 - 工程闭环完整：迁移、种子数据、入库、接口、集成测试、E2E、离线评测（`RAG-006`）。
 - 可观测性到位：`X-Trace-Id` 跨服务透传、结构化日志、`graph_trace` 可追踪执行分支。
 - 多轮短期记忆与澄清子Agent已落地（`RAG-009` + `RAG-011`）：支持槽位继承、ReAct澄清、会话续接，且澄清过程数据与业务返回解耦。
+- 意图收敛契约已落地（`RAG-012`）：Clarify Sub-Agent 输出 `resolved_intent/route_target/slot_updates`，下游仅消费契约，不再二次意图仲裁。
 
 ## Hybrid Resolve & Clarify Pipeline
 ```mermaid
@@ -79,7 +80,7 @@ flowchart TD
 - `POST /api/v1/knowledge/chunks/batch` batch ingest chunks for a source
 - `POST /api/v1/retrieve` retrieve chunks by metadata filters (optional vector ranking)
 - `POST /api/v1/answer` generate answer with conclusion/key points/citations (DeepSeek)
-- `POST /api/v1/answer/hybrid` hybrid answer (LangGraph + one-shot intent routing + biz tools + optional RAG evidence)
+- `POST /api/v1/answer/hybrid` hybrid answer（resolver 收敛 + Clarify Sub-Agent + biz tools + optional RAG evidence）
 
 ### RAG-009 Short-term Memory Highlights
 - 会话契约：`/api/v1/answer/hybrid` 支持 `session_id` / `turn_id`。
@@ -93,6 +94,12 @@ flowchart TD
 - `react_clarify_gate_async` 仅消费子Agent结果，去除 direct graph 耦合。
 - `tool_trace` 已端到端移除，降低调试字段对主链路的侵入。
 - `pending_clarification/clarify_messages` 不再出现在生产 `business_facts`，只用于内部 memory 持久化。
+
+### RAG-012 Intent Convergence Highlights
+- Clarify Sub-Agent 输出统一契约：`resolved_intent / route_target / slot_updates / intent_evidence`。
+- 约束 `route_target = intent`（当前阶段），并在 gate 侧执行契约一致性校验。
+- ambiguous 分支 `continue_business` 必须携带有效意图；否则回退澄清（`missing_intent` / `intent_route_mismatch`）。
+- 下游业务路由不再做二次意图仲裁，统一消费 resolver/clarify 收敛结果。
 
 
 ## Quick Start
@@ -270,7 +277,7 @@ Outputs:
 - `reports/rag006_eval_failures.jsonl`
 
 ## RAG-009 Memory Acceptance Replay
-用途：回放 `data/rag009/memory_acceptance_cases.jsonl`，验收 `/api/v1/answer/hybrid` 的短期记忆行为（槽位继承、意图继承、订单引用澄清、会话隔离）。
+用途：回放 `data/rag009/memory_acceptance_cases.jsonl`，验收 `/api/v1/answer/hybrid` 的短期记忆行为（槽位继承、订单引用澄清、会话隔离）。
 
 前置条件：
 - 已完成数据准备（`RAG-000` 种子 + `RAG-002` 入库）。
