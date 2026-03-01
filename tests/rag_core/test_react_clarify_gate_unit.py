@@ -46,6 +46,22 @@ class _FakeClarifyAgentRuleExplain:
         )
 
 
+class _FakeClarifyAgentRouteDefault:
+    async def run_clarify_task(self, _task):
+        return ClarifyResult(
+            decision="continue_business",
+            clarify_question=None,
+            resolved_slots={"order_no": "SCN-009"},
+            slot_updates={"order_no": "SCN-009"},
+            resolved_intent="arrears_check",
+            route_target=None,
+            intent_evidence=["lookup_order_hit"],
+            missing_required_slots=[],
+            trace=["clarify_react:agent:finish_clarify"],
+            messages=[],
+        )
+
+
 @pytest.mark.anyio
 async def test_react_clarify_gate_should_accept_contract_intent_when_continue_business() -> None:
     parse_result = SimpleNamespace(intent=None, ambiguities=[])
@@ -68,6 +84,7 @@ async def test_react_clarify_gate_should_accept_contract_intent_when_continue_bu
     assert result.route_target == "arrears_check"
     assert result.payload.order_no == "SCN-006"
     assert "react_clarify_gate_async:resolved_intent:arrears_check" in result.trace
+    assert "react_clarify_gate_async:intent_evidence:lookup_order_hit" in result.trace
 
 
 @pytest.mark.anyio
@@ -92,6 +109,29 @@ async def test_react_clarify_gate_should_accept_contract_intent_rule_explain() -
     assert result.route_target == "rule_explain"
     assert result.payload.lot_code == "SCN-LOT-B"
     assert "react_clarify_gate_async:resolved_intent:rule_explain" in result.trace
+    assert "react_clarify_gate_async:intent_evidence:billing_rules_hit" in result.trace
+
+
+@pytest.mark.anyio
+async def test_react_clarify_gate_should_default_route_target_to_resolved_intent() -> None:
+    parse_result = SimpleNamespace(intent=None, ambiguities=[])
+    hydrate_result = SimpleNamespace(
+        payload=HybridAnswerRequest(query="订单 SCN-009 看下"),
+        missing_required_slots=[],
+    )
+
+    result = await react_clarify_gate_async(
+        parse_result=parse_result,
+        hydrate_result=hydrate_result,
+        memory_state=None,
+        llm_factory=lambda: None,
+        required_slots_for_intent=lambda _intent: (),
+        clarify_agent=_FakeClarifyAgentRouteDefault(),
+    )
+
+    assert result.decision == "continue_business"
+    assert result.payload.intent_hint == "arrears_check"
+    assert result.route_target == "arrears_check"
 
 
 class _FakeClarifyAgentMismatch:

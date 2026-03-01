@@ -812,7 +812,7 @@
   - existing hybrid behavior remains compatible for user-visible outputs
 
 ### RAG-012: Tool-evidence Intent Convergence in ReAct
-- Status: `In Progress` (PR-1 ~ PR-3 implemented)
+- Status: `Done` (PR-1 ~ PR-4 completed)
 - Goal:
   - keep `intent_slot_parse -> slot_hydrate` as fast pre-stage
   - enter Clarify Sub-Agent only when intent is ambiguous/conflicting or required slots are missing
@@ -875,6 +875,10 @@
       - no valid evidence -> `missing_intent` clarify
       - contract mismatch guard (`route_target != intent`) -> fallback clarify
     - add log assertions for intent evidence and contract traceability
+    - implemented:
+      - gate unit tests now assert intent-evidence trace emission
+      - added coverage for `route_target` defaulting to `resolved_intent`
+      - full `tests/rag_core` regression passed on this stage
 - Acceptance:
   - ambiguous requests can continue business when tool evidence is sufficient
   - no intent-confidence threshold is used in routing
