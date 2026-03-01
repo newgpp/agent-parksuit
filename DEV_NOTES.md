@@ -884,3 +884,28 @@
   - no intent-confidence threshold is used in routing
   - one request has one final intent authority after gate normalization
   - `route_target` is always equal to final `intent` in this phase
+
+### RAG-013: ReAct 图执行约束改造（单轮单工具 + 命中即收敛）
+- Status: `Done`
+- Goal:
+  - 限制 ReAct 每轮最多一次工具调用，避免同轮连续打多个工具导致延迟和不稳定分支
+  - 一旦工具返回有效命中（`hit=true`），立即收敛为最终 JSON，不再继续第二次工具调用
+  - 提升澄清链路可控性与性能，保持外部契约不变
+- Key changes:
+  - `clarify_react_graph` 改为外层轮询驱动，每轮注入 `remaining_steps=2`，将单轮工具循环硬约束在一次工具周期
+  - 新增 `_has_successful_tool_result`，仅检查本轮新增 `ToolMessage`，识别 `hit=true` 的成功工具结果
+  - 成功命中后切换到 `app_no_tools` 进行最终回答收敛，强制“无工具模式”输出最终 JSON
+  - 增强工具消息解析兼容性：支持 `dict`、JSON 字符串、`literal_eval` 字符串对象
+  - 异常可观测性补强：
+    - `react_clarify_gate` 增加 `logger.exception` 记录 ReAct 异常栈
+    - `intent_slot_parse` 增加 `llm[intent_slot_parse] output_preview` 日志，便于快速定位模型输出问题
+- Affected files:
+  - `src/agent_parksuite_rag_core/workflows/clarify_react_graph.py`
+  - `src/agent_parksuite_rag_core/services/react_clarify_gate.py`
+  - `src/agent_parksuite_rag_core/services/intent_slot_resolver.py`
+  - `docs/pr_acceptance.md`
+- Acceptance:
+  - 进入 ReAct 后单轮最多一次工具调用
+  - 若本轮出现 `hit=true` 工具结果，后续应直接输出最终 JSON，不再触发第二次工具调用
+  - 未命中时允许进入下一轮（受 `max_rounds` 约束）
+  - 现有短路澄清与 clear-intent 业务链路行为不回归

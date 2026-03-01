@@ -19,9 +19,14 @@ flowchart TD
 
     subgraph SA["Clarify Sub-Agent (ReAct)"]
       R0["run_clarify_task"]
-      R1["ReAct loop<br/>tool evidence + clarify"]
+      R1["round loop<br/>max_rounds"]
+      R11["single tool cycle<br/>remaining_steps=2"]
+      R12{"tool hit=true?"}
+      R13["no-tools finalize<br/>force final JSON"]
       R2["contract_out<br/>resolved_intent + decision + slot_updates"]
-      R0 --> R1 --> R2
+      R0 --> R1 --> R11 --> R12
+      R12 -->|yes| R13 --> R2
+      R12 -->|no| R1
     end
 
     GATE -->|clarify_short_circuit| X["clarify response"]
@@ -99,6 +104,11 @@ flowchart TD
 - Clarify Sub-Agent 输出统一契约：`resolved_intent / slot_updates / intent_evidence`。
 - ambiguous 分支 `continue_business` 必须携带有效意图；否则回退澄清（`missing_intent`）。
 - 下游业务路由不再做二次意图仲裁，统一消费 resolver/clarify 收敛结果。
+
+### RAG-013 ReAct Graph Refinement Highlights
+- ReAct 执行改为“单轮最多一次工具调用”，减少连续工具调用导致的额外延迟与分支抖动。
+- 当工具返回有效命中（`hit=true`）后，立即切换无工具模式收敛最终 JSON，不再继续第二次工具调用。
+- 增加关键可观测性：`intent_slot_parse` 记录 `output_preview`，`react_clarify_gate` 记录异常堆栈日志。
 
 
 ## Quick Start
