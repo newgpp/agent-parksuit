@@ -6,8 +6,8 @@
 - Hybrid Agent 链路可落地：`RAG + biz tools + LLM`，已支持 `rule_explain / arrears_check / fee_verify` 三类真实场景。
 - 工程闭环完整：迁移、种子数据、入库、接口、集成测试、E2E、离线评测（`RAG-006`）。
 - 可观测性到位：`X-Trace-Id` 跨服务透传、结构化日志、`graph_trace` 可追踪执行分支。
-- 多轮短期记忆与澄清子Agent已落地（`RAG-009` + `RAG-011`）：支持槽位继承、ReAct澄清、会话续接，且澄清过程数据与业务返回解耦。
-- 意图收敛契约已落地（`RAG-012`）：Clarify Sub-Agent 输出 `resolved_intent/slot_updates`，下游仅消费契约，不再二次意图仲裁。
+- 多轮短期记忆与 ReAct Engine 已落地（`RAG-009` + `RAG-011`）：支持槽位继承、ReAct澄清、会话续接，且澄清过程数据与业务返回解耦。
+- 意图收敛契约已落地（`RAG-012`）：ReAct Engine 输出 `resolved_intent/slot_updates`，下游仅消费契约，不再二次意图仲裁。
 - ReAct 图执行亮点已固化（`RAG-013 PR-5`）：同会话可续接澄清历史，且工具命中 `hit=true` 后立即收敛，避免过度意图推断。
 
 ## Hybrid Resolve & Clarify Pipeline
@@ -85,7 +85,7 @@ flowchart TD
 - `POST /api/v1/knowledge/chunks/batch` batch ingest chunks for a source
 - `POST /api/v1/retrieve` retrieve chunks by metadata filters (optional vector ranking)
 - `POST /api/v1/answer` generate answer with conclusion/key points/citations (DeepSeek)
-- `POST /api/v1/answer/hybrid` hybrid answer（resolver 收敛 + Clarify Sub-Agent + biz tools + optional RAG evidence）
+- `POST /api/v1/answer/hybrid` hybrid answer（resolver 收敛 + ReAct Engine + biz tools + optional RAG evidence）
 
 ### RAG-009 Short-term Memory Highlights
 - 会话契约：`/api/v1/answer/hybrid` 支持 `session_id` / `turn_id`。
@@ -94,14 +94,14 @@ flowchart TD
 - 可审计性：`graph_trace` 包含 `intent_slot_parse:*`、`slot_hydrate:*`、`react_clarify_gate_async:*` 与 `memory_persist`。
 - 隔离保证：不同 `session_id` 不共享短期记忆。
 
-### RAG-011 Clarify Sub-Agent Highlights
-- ReAct 澄清已抽象为子Agent契约：`ReActTask -> ReActResult`。
-- `react_clarify_gate_async` 仅消费子Agent结果，去除 direct graph 耦合。
+### RAG-011 ReAct Engine Highlights
+- ReAct 澄清已抽象为引擎契约：`ReActTask -> ReActResult`（`services/react_engine.py`）。
+- `react_clarify_gate_async` 仅消费引擎结果，去除 direct graph 耦合。
 - `tool_trace` 已端到端移除，降低调试字段对主链路的侵入。
 - `pending_clarification/clarify_messages` 不再出现在生产 `business_facts`，只用于内部 memory 持久化。
 
 ### RAG-012 Intent Convergence Highlights
-- Clarify Sub-Agent 输出统一契约：`resolved_intent / slot_updates / intent_evidence`。
+- ReAct Engine 输出统一契约：`resolved_intent / slot_updates / intent_evidence`。
 - ambiguous 分支 `continue_business` 必须携带有效意图；否则回退澄清（`missing_intent`）。
 - 下游业务路由不再做二次意图仲裁，统一消费 resolver/clarify 收敛结果。
 
