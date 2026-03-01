@@ -20,7 +20,10 @@ CLARIFY_SYSTEM_PROMPT = (
     "当用户参数可能同时代表订单或停车场时，优先调用工具先查订单再查停车场后再判断。"
     "最终回复必须是单个 JSON 对象，且只能包含 JSON，禁止输出任何额外说明、前后缀或 Markdown。"
     '仅输出JSON: {"action":"ask_user|finish_clarify|abort",'
-    '"clarify_question":string|null,"slot_updates":object,"reason":string|null}。'
+    '"clarify_question":string|null,"slot_updates":object,'
+    '"resolved_intent":"rule_explain|arrears_check|fee_verify|null",'
+    '"route_target":"rule_explain|arrears_check|fee_verify|null",'
+    '"intent_evidence":[string,...],"reason":string|null}。'
 )
 
 
@@ -28,6 +31,10 @@ class ClarifyReactResult(TypedDict, total=False):
     decision: str
     clarify_question: str | None
     resolved_slots: dict[str, Any]
+    slot_updates: dict[str, Any]
+    resolved_intent: str | None
+    route_target: str | None
+    intent_evidence: list[str]
     missing_required_slots: list[str]
     trace: list[str]
     messages: list[BaseMessage]
@@ -121,6 +128,10 @@ def _build_clarify_result(
     decision: str,
     clarify_question: str | None,
     resolved_slots: dict[str, Any],
+    slot_updates: dict[str, Any],
+    resolved_intent: str | None,
+    route_target: str | None,
+    intent_evidence: list[str],
     required_slots: list[str],
     trace: list[str],
     final_messages: list[BaseMessage],
@@ -129,6 +140,10 @@ def _build_clarify_result(
         "decision": decision,
         "clarify_question": clarify_question,
         "resolved_slots": resolved_slots,
+        "slot_updates": slot_updates,
+        "resolved_intent": resolved_intent,
+        "route_target": route_target,
+        "intent_evidence": intent_evidence,
         "missing_required_slots": _missing_slots(required_slots, resolved_slots),
         "trace": trace,
         "messages": final_messages,
@@ -195,13 +210,15 @@ def _normalize_action_and_slots(
     parsed: dict[str, Any],
     resolved_slots: dict[str, Any],
     required_slots: list[str],
-) -> tuple[ClarifyAction, str, str | None, list[str], list[str]]:
+) -> tuple[ClarifyAction, str, str | None, list[str], dict[str, Any], str | None, str | None, list[str]]:
     action_raw = str(parsed.get("action", "ask_user")).strip()
     action: ClarifyAction = action_raw if action_raw in {"ask_user", "finish_clarify", "abort"} else "ask_user"
-    slot_updates = parsed.get("slot_updates", {})
-    if isinstance(slot_updates, dict):
-        for key, value in slot_updates.items():
+    slot_updates_raw = parsed.get("slot_updates", {})
+    slot_updates: dict[str, Any] = {}
+    if isinstance(slot_updates_raw, dict):
+        for key, value in slot_updates_raw.items():
             if value is not None and str(value).strip():
+                slot_updates[key] = value
                 resolved_slots[key] = value
     missing_required_slots = _missing_slots(required_slots, resolved_slots)
     if action == "finish_clarify" and missing_required_slots:
@@ -210,8 +227,22 @@ def _normalize_action_and_slots(
     clarify_question = parsed.get("clarify_question")
     if action == "ask_user" and not clarify_question:
         clarify_question = "请补充关键信息后继续，例如订单号 SCN-020 或车牌号。"
-    slot_keys = sorted(slot_updates.keys()) if isinstance(slot_updates, dict) else []
-    return action, decision, (str(clarify_question) if clarify_question is not None else None), missing_required_slots, slot_keys
+    resolved_intent_raw = parsed.get("resolved_intent")
+    resolved_intent = str(resolved_intent_raw).strip() if resolved_intent_raw is not None else None
+    route_target_raw = parsed.get("route_target")
+    route_target = str(route_target_raw).strip() if route_target_raw is not None else None
+    intent_evidence_raw = parsed.get("intent_evidence", [])
+    intent_evidence = [str(item).strip() for item in intent_evidence_raw if str(item).strip()] if isinstance(intent_evidence_raw, list) else []
+    return (
+        action,
+        decision,
+        (str(clarify_question) if clarify_question is not None else None),
+        missing_required_slots,
+        slot_updates,
+        resolved_intent,
+        route_target,
+        intent_evidence,
+    )
 
 
 async def run_clarify_react_once(
@@ -269,12 +300,16 @@ async def run_clarify_react_once(
             decision="clarify_react",
             clarify_question=(question or "请补充必要信息后继续。"),
             resolved_slots=resolved_slots,
+            slot_updates={},
+            resolved_intent=None,
+            route_target=None,
+            intent_evidence=[],
             required_slots=required_slots,
             trace=trace,
             final_messages=final_messages,
         )
 
-    action, decision, clarify_question, missing_required_slots, slot_update_keys = _normalize_action_and_slots(
+    action, decision, clarify_question, missing_required_slots, slot_updates, resolved_intent, route_target, intent_evidence = _normalize_action_and_slots(
         parsed=parsed,
         resolved_slots=resolved_slots,
         required_slots=required_slots,
@@ -290,7 +325,7 @@ async def run_clarify_react_once(
         "clarify_react result action={} decision={} slot_updates_keys={} missing_required_slots={} rounds={}",
         action,
         decision,
-        slot_update_keys,
+        sorted(slot_updates.keys()),
         missing_required_slots,
         max_rounds,
     )
@@ -298,6 +333,10 @@ async def run_clarify_react_once(
         decision=decision,
         clarify_question=clarify_question,
         resolved_slots=resolved_slots,
+        slot_updates=slot_updates,
+        resolved_intent=resolved_intent,
+        route_target=route_target,
+        intent_evidence=intent_evidence,
         required_slots=required_slots,
         trace=trace,
         final_messages=final_messages,

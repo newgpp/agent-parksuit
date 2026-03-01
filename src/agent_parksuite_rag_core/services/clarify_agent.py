@@ -27,6 +27,10 @@ class ClarifyResult:
     decision: str
     clarify_question: str | None
     resolved_slots: dict[str, Any]
+    slot_updates: dict[str, Any]
+    resolved_intent: str | None
+    route_target: str | None
+    intent_evidence: list[str]
     missing_required_slots: list[str]
     trace: list[str]
     messages: list[dict[str, Any]] | None
@@ -102,6 +106,18 @@ class ReActClarifyAgent:
             decision=str(react_result.get("decision", "clarify_react")),
             clarify_question=react_result.get("clarify_question"),
             resolved_slots=dict(react_result.get("resolved_slots", {})),
+            slot_updates=dict(react_result.get("slot_updates", {})),
+            resolved_intent=(
+                str(react_result.get("resolved_intent")).strip()
+                if react_result.get("resolved_intent") is not None
+                else None
+            ),
+            route_target=(
+                str(react_result.get("route_target")).strip()
+                if react_result.get("route_target") is not None
+                else None
+            ),
+            intent_evidence=[str(item) for item in react_result.get("intent_evidence", []) if str(item).strip()],
             missing_required_slots=list(react_result.get("missing_required_slots", [])),
             trace=list(react_result.get("trace", [])),
             messages=serialized_messages,

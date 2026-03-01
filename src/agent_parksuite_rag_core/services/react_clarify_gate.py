@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
 
@@ -18,6 +17,7 @@ from agent_parksuite_rag_core.services.memory import SessionMemoryState
 ResolverDecision = Literal["continue_business", "clarify_short_circuit", "clarify_react", "clarify_abort"]
 RequiredSlotsResolver = Callable[[str | None], tuple[str, ...]]
 LLMFactory = Callable[[], Any]
+_VALID_INTENTS = {"rule_explain", "arrears_check", "fee_verify"}
 
 
 @dataclass(frozen=True)
@@ -81,34 +81,6 @@ def _short_circuit_if_possible(parse_result: Any, hydrate_result: Any, trace: li
     )
 
 
-def _collect_tool_hit_flags(messages: list[dict[str, Any]] | None) -> tuple[bool | None, bool | None]:
-    lookup_order_hit: bool | None = None
-    billing_rule_hit: bool | None = None
-    if not isinstance(messages, list):
-        return lookup_order_hit, billing_rule_hit
-    for item in messages:
-        if not isinstance(item, dict) or item.get("role") != "tool":
-            continue
-        content = str(item.get("content", "")).strip()
-        if not content:
-            continue
-        try:
-            payload = json.loads(content)
-        except Exception:
-            continue
-        if not isinstance(payload, dict):
-            continue
-        tool_name = str(payload.get("tool", "")).strip()
-        hit_raw = payload.get("hit")
-        if not isinstance(hit_raw, bool):
-            continue
-        if tool_name == "lookup_order":
-            lookup_order_hit = hit_raw
-        if tool_name == "query_billing_rules_by_params":
-            billing_rule_hit = hit_raw
-    return lookup_order_hit, billing_rule_hit
-
-
 async def _invoke_react_once(
     *,
     parse_result: Any,
@@ -145,24 +117,6 @@ async def _invoke_react_once(
             trace=[*trace, "react_clarify_gate_async:fallback:react_error"],
             clarify_messages=None,
         )
-    lookup_order_hit, billing_rule_hit = _collect_tool_hit_flags(clarify_result.messages)
-    react_trace = list(clarify_result.trace)
-    if lookup_order_hit is True:
-        react_trace.append("react_clarify_gate_async:tool_hit:lookup_order")
-    elif lookup_order_hit is False:
-        react_trace.append("react_clarify_gate_async:tool_miss:lookup_order")
-    if billing_rule_hit is True:
-        react_trace.append("react_clarify_gate_async:tool_hit:query_billing_rules_by_params")
-    elif billing_rule_hit is False:
-        react_trace.append("react_clarify_gate_async:tool_miss:query_billing_rules_by_params")
-    clarify_result = ClarifyResult(
-        decision=clarify_result.decision,
-        clarify_question=clarify_result.clarify_question,
-        resolved_slots=dict(clarify_result.resolved_slots),
-        missing_required_slots=list(clarify_result.missing_required_slots),
-        trace=react_trace,
-        messages=clarify_result.messages,
-    )
     return clarify_result, None
 
 
@@ -178,49 +132,46 @@ def _normalize_react_result(
     react_trace = react_result.trace
     merged_payload = hydrate_result.payload.model_copy(update=dict(react_result.resolved_slots))
     react_missing = list(react_result.missing_required_slots)
-    resolved_slots = dict(react_result.resolved_slots)
+    resolved_intent = react_result.resolved_intent if react_result.resolved_intent in _VALID_INTENTS else None
+    route_target = react_result.route_target if react_result.route_target in _VALID_INTENTS else None
+    intent_evidence = [item for item in react_result.intent_evidence if item]
+
+    if route_target is not None and resolved_intent is not None and route_target != resolved_intent:
+        return ReactClarifyGateResult(
+            decision="clarify_react",
+            payload=merged_payload,
+            clarify_reason="当前意图判断仍不稳定，请补充关键信息后继续。",
+            clarify_error="intent_route_mismatch",
+            trace=[*trace, *react_trace, "react_clarify_gate_async:intent_route_mismatch"],
+            clarify_messages=react_messages,
+        )
+
+    if react_decision == "continue_business" and not react_missing:
+        converged_payload = merged_payload
+        extra_trace: list[str] = []
+        if resolved_intent is not None:
+            converged_payload = converged_payload.model_copy(update={"intent_hint": resolved_intent})
+            extra_trace.append(f"react_clarify_gate_async:resolved_intent:{resolved_intent}")
+        if route_target is not None:
+            extra_trace.append(f"react_clarify_gate_async:route_target:{route_target}")
+        if intent_evidence:
+            extra_trace.append(f"react_clarify_gate_async:intent_evidence:{'|'.join(intent_evidence)}")
+        return ReactClarifyGateResult(
+            decision="continue_business",
+            payload=converged_payload,
+            clarify_reason=None,
+            clarify_error=None,
+            trace=[*trace, *react_trace, *extra_trace, "react_clarify_gate_async:continue_business"],
+            clarify_messages=react_messages,
+        )
 
     if parse_result.intent is None:
-        # Intent fallback policy:
-        # if ReAct has already resolved billing-rule evidence, converge to rule_explain;
-        # else if concrete order_no is resolved, converge to arrears_check.
-        has_billing_rule_hit = "react_clarify_gate_async:tool_hit:query_billing_rules_by_params" in react_trace
-        if react_decision == "continue_business" and has_billing_rule_hit:
-            converged_payload = merged_payload.model_copy(update={"intent_hint": "rule_explain"})
-            return ReactClarifyGateResult(
-                decision="continue_business",
-                payload=converged_payload,
-                clarify_reason=None,
-                clarify_error=None,
-                trace=[*trace, *react_trace, "react_clarify_gate_async:infer_intent:rule_explain"],
-                clarify_messages=react_messages,
-            )
-        has_lookup_order_hit = "react_clarify_gate_async:tool_hit:lookup_order" in react_trace
-        if react_decision == "continue_business" and has_lookup_order_hit:
-            converged_payload = merged_payload.model_copy(update={"intent_hint": "arrears_check"})
-            return ReactClarifyGateResult(
-                decision="continue_business",
-                payload=converged_payload,
-                clarify_reason=None,
-                clarify_error=None,
-                trace=[*trace, *react_trace, "react_clarify_gate_async:infer_intent:arrears_check"],
-                clarify_messages=react_messages,
-            )
         return ReactClarifyGateResult(
             decision="clarify_react",
             payload=merged_payload,
             clarify_reason=react_result.clarify_question or "请先确认你的问题类型：规则解释、欠费查询，还是订单金额核验？",
             clarify_error="missing_intent",
             trace=[*trace, *react_trace, "react_clarify_gate_async:pending_intent"],
-            clarify_messages=react_messages,
-        )
-    if react_decision == "continue_business" and not react_missing:
-        return ReactClarifyGateResult(
-            decision="continue_business",
-            payload=merged_payload,
-            clarify_reason=None,
-            clarify_error=None,
-            trace=[*trace, *react_trace, "react_clarify_gate_async:continue_business"],
             clarify_messages=react_messages,
         )
     if react_decision == "clarify_abort":
@@ -301,6 +252,10 @@ async def react_clarify_gate_async(
             decision="clarify_react",
             clarify_question=None,
             resolved_slots={},
+            slot_updates={},
+            resolved_intent=None,
+            route_target=None,
+            intent_evidence=[],
             missing_required_slots=[],
             trace=[],
             messages=[],

@@ -812,50 +812,66 @@
   - existing hybrid behavior remains compatible for user-visible outputs
 
 ### RAG-012: Tool-evidence Intent Convergence in ReAct
-- Status: `Planned`
+- Status: `In Progress` (PR-1 ~ PR-2 implemented)
 - Goal:
-  - let ReAct output explicit `inferred_intent` based on tool evidence
-  - avoid duplicated intent inference logic in outer gate
-  - keep intent convergence deterministic and traceable
+  - keep `intent_slot_parse -> slot_hydrate` as fast pre-stage
+  - enter Clarify Sub-Agent only when intent is ambiguous/conflicting or required slots are missing
+  - let ReAct output explicit intent convergence result based on tool evidence
+  - remove downstream second intent arbitration and keep one final authority
 - Why:
-  - current gate still performs post-ReAct intent inference (`rule_explain` / `arrears_check`) using traces and slot heuristics
-  - this can drift from ReAct internal decision context and increases coupling
+  - current gate still has fallback heuristics after ReAct in some branches
+  - intent semantics and execution routing should be unified under one contract
 - Scope:
-  - clarification path only (`intent` ambiguous branch)
-  - no change to clear-intent + short-circuit behavior
+  - preserve current clear-intent + short-circuit behavior
+  - converge ambiguous/missing-slot path via Clarify Sub-Agent contract
 - Contract changes:
-  - extend ReAct JSON output schema with:
-    - `inferred_intent`: `rule_explain|arrears_check|fee_verify|null`
+  - Clarify Sub-Agent result contract (normalized):
+    - `resolved_intent`: `rule_explain|arrears_check|fee_verify|null`
+    - `decision`: `continue|ask|abort`
+    - `route_target`: same value as `resolved_intent` (explicitly `route_target = intent`)
+    - `slot_updates`: resolved slot delta
     - `intent_evidence`: optional short labels (e.g. `lookup_order_hit`, `billing_rules_hit`)
   - extend `ClarifyResult` with:
-    - `inferred_intent: str | None`
+    - `resolved_intent: str | None`
+    - `route_target: str | None`
+    - `slot_updates: dict[str, Any]`
     - `intent_evidence: list[str]`
 - Decision policy:
-  - gate accepts ReAct intent only when:
-    - `decision=continue_business`
-    - `inferred_intent` is in valid intent set
+  - gate accepts Sub-Agent intent only when:
+    - `decision=continue`
+    - `resolved_intent` is in valid intent set
+    - `route_target == resolved_intent`
   - fallback policy:
-    - if `inferred_intent` missing/invalid, keep existing missing-intent clarification
+    - if `resolved_intent` missing/invalid, keep existing missing-intent clarification
   - guardrail:
     - no confidence-score based branching
     - intent must be backed by tool evidence or explicit deterministic rule
 - PR split:
-  - PR-1: schema/prompt plumbing
-    - update clarify prompt JSON contract to include `inferred_intent` + `intent_evidence`
+  - PR-1: contract/schema plumbing
+    - update clarify prompt JSON contract to include `resolved_intent`/`route_target`/`slot_updates`/`intent_evidence`
     - parse and carry fields through `clarify_react_graph -> ClarifyResult`
+    - implemented:
+      - clarify prompt/JSON parser now carries `resolved_intent`/`route_target`/`slot_updates`/`intent_evidence`
+      - `ClarifyResult` extended with the same contract fields
   - PR-2: gate integration
-    - `react_clarify_gate` consumes `ClarifyResult.inferred_intent` as primary source
-    - reduce/remove gate-side message parsing and trace-based inference branches
-  - PR-3: resolver authority unification
-    - resolver final `resolved_intent` always derives from post-gate payload (`intent_hint`)
-    - ensure debug API reports final converged intent consistently
+    - `react_clarify_gate` consumes `ClarifyResult.resolved_intent` and `route_target`
+    - enforce `route_target = intent` contract and remove residual heuristic arbitration
+    - implemented:
+      - removed gate-side tool-hit trace inference fallback
+      - gate now uses ReAct contract as primary intent source for `continue_business`
+      - added contract mismatch guard (`intent_route_mismatch`) and unit coverage
+  - PR-3: downstream routing unification
+    - resolver/hybrid route consumes contract output directly; no second intent arbitration
+    - ensure debug API reports final converged intent and route target consistently
   - PR-4: tests + acceptance
     - add unit/integration cases:
-      - ambiguous intent + order tool hit -> inferred `arrears_check`
-      - ambiguous intent + billing rule tool hit -> inferred `rule_explain`
+      - ambiguous intent + order tool hit -> `resolved_intent=arrears_check`, `route_target=arrears_check`
+      - ambiguous intent + billing rule tool hit -> `resolved_intent=rule_explain`, `route_target=rule_explain`
       - no valid evidence -> `missing_intent` clarify
-    - add log assertions for intent evidence traceability
+      - contract mismatch guard (`route_target != intent`) -> fallback clarify
+    - add log assertions for intent evidence and contract traceability
 - Acceptance:
   - ambiguous requests can continue business when tool evidence is sufficient
   - no intent-confidence threshold is used in routing
   - one request has one final intent authority after gate normalization
+  - `route_target` is always equal to final `intent` in this phase

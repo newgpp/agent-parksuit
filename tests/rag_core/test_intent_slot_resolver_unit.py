@@ -13,6 +13,9 @@ async def test_resolve_turn_context_async_should_use_llm_slots_when_available(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _FakeLLM:
+        def bind(self, **_kwargs):
+            return self
+
         async def ainvoke(self, _messages):
             class _Resp:
                 content = (
@@ -53,6 +56,9 @@ async def test_intent_slot_parse_should_merge_llm_json_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _FakeLLM:
+        def bind(self, **_kwargs):
+            return self
+
         async def ainvoke(self, _messages):
             class _Resp:
                 content = (
@@ -83,6 +89,9 @@ async def test_intent_slot_parse_should_fallback_when_llm_returns_invalid_json(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _FakeLLM:
+        def bind(self, **_kwargs):
+            return self
+
         async def ainvoke(self, _messages):
             class _Resp:
                 content = "not-a-json"
@@ -106,6 +115,9 @@ async def test_intent_slot_parse_should_fallback_when_llm_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _FakeLLM:
+        def bind(self, **_kwargs):
+            return self
+
         async def ainvoke(self, _messages):
             raise RuntimeError("llm down")
 
