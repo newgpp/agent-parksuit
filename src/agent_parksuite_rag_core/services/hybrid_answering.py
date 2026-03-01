@@ -24,7 +24,7 @@ RetrieveFn = Callable[[HybridExecutionContext], Awaitable[list[RetrieveResponseI
 def _to_execution_context(payload: HybridAnswerRequest, resolved_intent: str | None) -> HybridExecutionContext:
     return HybridExecutionContext(
         query=payload.query,
-        intent_hint=resolved_intent or payload.intent_hint,
+        intent_hint=resolved_intent,
         query_embedding=payload.query_embedding,
         top_k=payload.top_k,
         doc_type=payload.doc_type,
@@ -102,17 +102,6 @@ async def _persist_session_memory(
         new_state["resolved_slots"] = resolved_slots
     await repo.save_session(session_id, new_state, settings.memory_ttl_seconds)
 
-
-async def _classify_intent(payload: HybridExecutionContext) -> str:
-    # Intent authority is resolver/ReAct stage; hybrid workflow consumes resolved intent only.
-    if payload.intent_hint in {"rule_explain", "arrears_check", "fee_verify"}:
-        logger.info("hybrid classify source=resolver_resolved_intent intent={}", payload.intent_hint)
-        return payload.intent_hint
-
-    logger.warning("hybrid classify source=resolver_fallback intent=rule_explain")
-    return "rule_explain"
-
-
 async def run_hybrid_answering(
     payload: HybridAnswerRequest,
     retrieve_fn: RetrieveFn,
@@ -163,6 +152,29 @@ async def run_hybrid_answering(
                 memory_state,
                 pending_clarification=memory_pending_clarification,
                 clarify_messages=memory_clarify_messages,
+                resolved_slots_override=memory_resolved_slots,
+            )
+        return result
+
+    if resolved_intent not in {"rule_explain", "arrears_check", "fee_verify"}:
+        result: HybridGraphState = {
+            "intent": "",
+            "retrieved_items": [],
+            "business_facts": {
+                "error": "missing_intent_contract",
+            },
+            "conclusion": "当前意图尚未收敛，请补充关键信息后继续。",
+            "key_points": ["请先明确问题类型：规则解释、欠费查询或金额核验。"],
+            "model": "",
+            "trace": [*memory_trace, "intent_router:missing_intent_contract"],
+        }
+        if payload.session_id:
+            await _persist_session_memory(
+                payload,
+                result,
+                memory_state,
+                pending_clarification={"decision": "clarify_react", "error": "missing_intent_contract"},
+                clarify_messages=resolved.clarify_messages or [],
                 resolved_slots_override=memory_resolved_slots,
             )
         return result
@@ -219,10 +231,9 @@ async def run_hybrid_answering(
             intent=intent,
         )
 
-    async def _classify_fn(p: HybridExecutionContext) -> str:
-        if resolved_intent in {"rule_explain", "arrears_check", "fee_verify"}:
-            return resolved_intent
-        return await _classify_intent(p)
+    async def _classify_fn(_p: HybridExecutionContext) -> str:
+        # PR-3: downstream routing consumes resolver/clarify contract only.
+        return str(resolved_intent)
 
     result = await run_hybrid_workflow(
         payload=execution_ctx,

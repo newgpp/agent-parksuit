@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -252,3 +253,40 @@ async def test_hybrid_should_clear_clarify_memory_after_continue_business(
     assert state2 is not None
     assert "pending_clarification" not in state2
     assert "clarify_messages" not in state2
+
+
+@pytest.mark.anyio
+async def test_hybrid_should_not_fallback_intent_when_contract_missing(
+    rag_async_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fake_resolve_turn_context_async(payload, memory_state):
+        return SimpleNamespace(
+            payload=payload,
+            decision="continue_business",
+            memory_trace=["intent_slot_parse:deterministic"],
+            clarify_reason=None,
+            clarify_error=None,
+            clarify_messages=None,
+            resolved_intent=None,
+            execution_context=None,
+        )
+
+    monkeypatch.setattr(
+        "agent_parksuite_rag_core.services.hybrid_answering.resolve_turn_context_async",
+        _fake_resolve_turn_context_async,
+    )
+
+    resp = await rag_async_client.post(
+        "/api/v1/answer/hybrid",
+        json={
+            "session_id": "rag012-ses-missing-intent-contract-001",
+            "turn_id": "t1",
+            "query": "这单怎么收费",
+            "city_code": "310100",
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["business_facts"]["error"] == "missing_intent_contract"
+    assert "intent_router:missing_intent_contract" in body["graph_trace"]

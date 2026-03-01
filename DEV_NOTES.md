@@ -812,7 +812,7 @@
   - existing hybrid behavior remains compatible for user-visible outputs
 
 ### RAG-012: Tool-evidence Intent Convergence in ReAct
-- Status: `In Progress` (PR-1 ~ PR-2 implemented)
+- Status: `In Progress` (PR-1 ~ PR-3 implemented)
 - Goal:
   - keep `intent_slot_parse -> slot_hydrate` as fast pre-stage
   - enter Clarify Sub-Agent only when intent is ambiguous/conflicting or required slots are missing
@@ -863,8 +863,10 @@
   - PR-3: downstream routing unification
     - resolver/hybrid route consumes contract output directly; no second intent arbitration
     - ensure debug API reports final converged intent and route target consistently
-    - in progress:
-      - gate now blocks `continue_business` when intent is still missing in ambiguous branch
+    - implemented:
+      - removed downstream `rule_explain` fallback arbitration in `hybrid_answering` route path
+      - when contract is missing final intent, route returns clarify-style contract error (`missing_intent_contract`)
+      - gate blocks `continue_business` when intent is still missing in ambiguous branch
       - debug clarify response now includes `route_target` for intent-route consistency check
   - PR-4: tests + acceptance
     - add unit/integration cases:
