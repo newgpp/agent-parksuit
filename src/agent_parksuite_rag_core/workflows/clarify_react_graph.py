@@ -8,6 +8,7 @@ from langchain_core.messages import BaseMessage, ToolMessage
 from langgraph.prebuilt import create_react_agent
 
 from agent_parksuite_rag_core.clients.llm_client import get_default_chat_llm
+from agent_parksuite_rag_core.tools.clarify_react_tools import build_clarify_react_tools
 
 CLARIFY_SYSTEM_PROMPT = (
     "你是停车业务澄清助手。"
@@ -39,9 +40,9 @@ def build_clarify_react_app(
 
 
 async def run_clarify_react_graph(
-    app: Any,
     messages: list[BaseMessage],
     max_rounds: int,
+    tools: list[Any] | None = None,
 ) -> list[BaseMessage]:
     def _tool_content_to_obj(content: Any) -> dict[str, Any] | None:
         if isinstance(content, dict):
@@ -72,6 +73,9 @@ async def run_clarify_react_graph(
         return False
 
     current_messages = list(messages)
+    app = build_clarify_react_app(
+        tools=(tools if tools is not None else build_clarify_react_tools()),
+    )
     app_no_tools = build_clarify_react_app(tools=[])
     recursion_limit = max(4, max_rounds * 2)
     for _ in range(max(1, max_rounds)):

@@ -11,11 +11,7 @@ from agent_parksuite_common.llm_payload import dump_llm_input, dump_llm_output, 
 from agent_parksuite_rag_core.config import settings
 from agent_parksuite_rag_core.schemas.answer import HybridAnswerRequest
 from agent_parksuite_rag_core.services.memory import SessionMemoryState
-from agent_parksuite_rag_core.tools.clarify_react_tools import build_clarify_react_tools
-from agent_parksuite_rag_core.workflows.clarify_react_graph import (
-    build_clarify_react_app,
-    run_clarify_react_graph,
-)
+from agent_parksuite_rag_core.workflows.clarify_react_graph import run_clarify_react_graph
 
 ClarifyAction = Literal["ask_user", "finish_clarify", "abort"]
 
@@ -269,8 +265,7 @@ class DefaultReActEngine:
             sorted([key for key, value in resolved_slots.items() if value is not None]),
         )
         trace: list[str] = ["clarify_react:start", "clarify_react:agent:create_react_agent"]
-        app = build_clarify_react_app(tools=build_clarify_react_tools())
-        final_messages = await run_clarify_react_graph(app=app, messages=messages, max_rounds=task.max_rounds)
+        final_messages = await run_clarify_react_graph(messages=messages, max_rounds=task.max_rounds)
         logger.info(
             "clarify_react agent_done final_messages={} recursion_limit={}",
             len(final_messages),
