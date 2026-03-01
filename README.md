@@ -14,9 +14,7 @@
 ## Hybrid Resolve & Clarify Pipeline
 ```mermaid
 flowchart TD
-    A["/answer/hybrid"] --> Q["session_queue<br/>single-flight by session_id"]
-    Q --> M["load_memory<br/>by session_id"]
-    M --> P1["intent_slot_parse<br/>意图+槽位提取"]
+    Q["session入口<br/>session单飞队列 + 记忆加载"] --> P1["intent_slot_parse<br/>意图+槽位提取"]
     P1 --> P2["slot_hydrate<br/>槽位继承"]
     P2 --> GATE["react_clarify_gate"]
 
