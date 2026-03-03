@@ -77,14 +77,6 @@ async def debug_clarify_react_route(
         new_state = dict(old)
         new_state["slots"] = slots
         new_state["clarify_messages"] = debug_result.messages
-        new_state["pending_clarification"] = {
-            "decision": debug_result.decision,
-            "error": debug_result.clarify_error,
-            "missing_required_slots": debug_result.missing_required_slots,
-        }
-        new_state["resolved_slots"] = {
-            key: value for key, value in debug_result.resolved_slots.items() if value is not None
-        }
         await repo.save_session(session_id, new_state, settings.memory_ttl_seconds)
 
     return ClarifyReactDebugResponse(

@@ -49,9 +49,8 @@ async def _persist_session_memory(
     result: HybridGraphState,
     previous_state: SessionMemoryState | None,
     *,
-    pending_clarification: dict[str, Any] | None = None,
     clarify_messages: list[dict[str, Any]] | None = None,
-    resolved_slots_override: dict[str, Any] | None = None,
+    resolved_slots: dict[str, Any] | None = None,
 ) -> None:
     session_id = (payload.session_id or "").strip()
     if not session_id:
@@ -72,7 +71,6 @@ async def _persist_session_memory(
         slots["plate_no"] = facts["plate_no"]
     if facts.get("city_code"):
         slots["city_code"] = facts["city_code"]
-    resolved_slots = resolved_slots_override
     if not isinstance(resolved_slots, dict):
         resolved_slots = facts.get("resolved_slots", {})
     if isinstance(resolved_slots, dict):
@@ -80,28 +78,11 @@ async def _persist_session_memory(
             if value is not None:
                 slots[key] = value
 
-    turns = list(old.get("turns", []))
-    turns.append(
-        {
-            "turn_id": payload.turn_id,
-            "query": payload.query,
-            "intent": result.get("intent", ""),
-            "order_no": slots.get("order_no"),
-        }
-    )
-    if len(turns) > settings.memory_max_turns:
-        turns = turns[-settings.memory_max_turns :]
-
     new_state: SessionMemoryState = {
         "slots": slots,
-        "turns": turns,
     }
-    if isinstance(pending_clarification, dict):
-        new_state["pending_clarification"] = pending_clarification
-        if isinstance(clarify_messages, list) and clarify_messages:
-            new_state["clarify_messages"] = clarify_messages[-settings.memory_max_clarify_messages :]
-    if isinstance(resolved_slots, dict):
-        new_state["resolved_slots"] = resolved_slots
+    if isinstance(clarify_messages, list) and clarify_messages:
+        new_state["clarify_messages"] = clarify_messages[-settings.memory_max_clarify_messages :]
     await repo.save_session(session_id, new_state, settings.memory_ttl_seconds)
 
 
@@ -223,19 +204,13 @@ async def _run_hybrid_answering_inner(
     }
     if resolved.decision in {"clarify_short_circuit", "clarify_react", "clarify_abort"} and resolved.clarify_reason:
         result = _build_clarify_result(resolved, resolved_intent, memory_trace)
-        clarify_error = resolved.clarify_error or "clarification_required"
-        memory_pending_clarification = {
-            "decision": resolved.decision,
-            "error": clarify_error,
-        }
         if payload.session_id:
             await _persist_session_memory(
                 payload,
                 result,
                 memory_state,
-                pending_clarification=memory_pending_clarification,
                 clarify_messages=resolved.clarify_messages or [],
-                resolved_slots_override=memory_resolved_slots,
+                resolved_slots=memory_resolved_slots,
             )
         return result
 
@@ -246,9 +221,8 @@ async def _run_hybrid_answering_inner(
                 payload,
                 result,
                 memory_state,
-                pending_clarification={"decision": "clarify_react", "error": "missing_intent_contract"},
                 clarify_messages=resolved.clarify_messages or [],
-                resolved_slots_override=memory_resolved_slots,
+                resolved_slots=memory_resolved_slots,
             )
         return result
 
@@ -273,9 +247,8 @@ async def _run_hybrid_answering_inner(
             payload,
             result,
             memory_state,
-            pending_clarification=None,
             clarify_messages=None,
-            resolved_slots_override=memory_resolved_slots,
+            resolved_slots=memory_resolved_slots,
         )
     return result
 

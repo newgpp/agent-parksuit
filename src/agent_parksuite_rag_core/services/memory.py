@@ -7,14 +7,8 @@ from typing import Any, Protocol, TypedDict
 class SessionMemoryState(TypedDict, total=False):
     # 会话槽位快照（如 city_code/lot_code/plate_no/order_no 等）
     slots: dict[str, Any]
-    # 近期轮次摘要列表（按时间追加，用于短期上下文追踪）
-    turns: list[dict[str, Any]]
-    # ReAct澄清消息历史（仅在 pending_clarification 存在时保留）
+    # ReAct澄清消息历史（用于下一轮澄清续接）
     clarify_messages: list[dict[str, Any]]
-    # 待澄清上下文（用于下一轮续接）
-    pending_clarification: dict[str, Any]
-    # 已确认/已校验槽位
-    resolved_slots: dict[str, Any]
 
 
 class SessionMemoryRepo(Protocol):
