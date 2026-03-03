@@ -15,11 +15,12 @@ CLARIFY_SYSTEM_PROMPT = (
     "目标是最短路径补齐业务必填槽位并消除歧义。"
     "每轮最多只允许一次工具调用；拿到可用结果后不要继续调用第二个工具，直接给出最终JSON。"
     "当用户参数可能同时代表订单或停车场时，优先调用工具先查订单再查停车场后再判断。"
+    "slot_updates 只能基于：用户当前输入、历史已确认槽位、以及工具调用的入参/结果；禁止猜测无证据支持的字段，无证据时返回空对象 {}。"
     "最终回复必须是单个 JSON 对象，且只能包含 JSON，禁止输出任何额外说明、前后缀或 Markdown。"
     '仅输出JSON: {"action":"ask_user|finish_clarify|abort",'
     '"clarify_question":string|null,"slot_updates":object,'
     '"resolved_intent":"rule_explain|arrears_check|fee_verify|null",'
-    '"intent_evidence":[string,...],"reason":string|null}。'
+    '"intent_evidence":[string,...]}。'
 )
 
 
